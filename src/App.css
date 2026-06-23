@@ -1,0 +1,30 @@
+.app-shell {
+  min-height: 100vh;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f8fafc;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  padding: 1rem;
+}
+
+.app-shell > *:not(:first-child) {
+  position: relative;
+  z-index: 1;
+}
+
+.title {
+  font-size: clamp(2rem, 5vw, 3rem);
+  margin: 0;
+  letter-spacing: 0.02em;
+  background: linear-gradient(135deg, #38bdf8 0%, #a855f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
