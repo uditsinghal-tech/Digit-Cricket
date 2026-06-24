@@ -42,6 +42,9 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore — startCrowd is idempotent and retries on the next interaction
     }
+    // Fires once on the first user interaction. The earlier in-render call
+    // to startCrowd() may have been rejected by the browser's autoplay policy;
+    // running again inside a real gesture lets it succeed.
     const begin = () => {
       try {
         startCrowd()

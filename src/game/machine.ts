@@ -22,13 +22,13 @@ export type CricketContext = {
   events: BallEvent[]
 }
 
-export type CricketInput = {
+type CricketInput = {
   playerName: string
   firstBatter: Innings
   ballsPerInnings: BallsPerInnings
 }
 
-export type CricketEvent = { type: 'PICK'; number: BallNumber }
+type CricketEvent = { type: 'PICK'; number: BallNumber }
 
 // How long the machine lingers in the `revealing` state so the view can
 // stagger the player pick, computer pick, and outcome chip on screen.

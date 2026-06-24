@@ -5,7 +5,7 @@ import { createContext, useContext } from 'react'
 // same name into both subsystems.
 export type StadiumReaction = 'four' | 'six' | 'wicket' | 'win' | 'lose'
 
-export type StadiumReactionContextValue = {
+type StadiumReactionContextValue = {
   reaction: StadiumReaction | null
   triggerReaction: (kind: StadiumReaction) => void
 }

@@ -3,7 +3,7 @@ import { createContext, useContext } from 'react'
 // Day / Night toggle for the stadium scene.
 export type StadiumMode = 'day' | 'night'
 
-export type StadiumModeContextValue = {
+type StadiumModeContextValue = {
   mode: StadiumMode
   toggleMode: () => void
 }
