@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { SoundName } from './sounds'
 
-export type SoundContextValue = {
+type SoundContextValue = {
   muted: boolean
   toggleMute: () => void
   play: (name: SoundName) => void
