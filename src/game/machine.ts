@@ -1,8 +1,9 @@
 import { assign, setup } from 'xstate'
 import {
-  BALLS_PER_INNINGS,
+  BALL_NUMBERS,
   type BallEvent,
   type BallNumber,
+  type BallsPerInnings,
   type Innings,
   type MatchWinner,
 } from './types'
@@ -13,6 +14,7 @@ export type CricketContext = {
   currentBatter: Innings
   inningsNumber: 1 | 2
   ballsThisInnings: number
+  ballsPerInnings: BallsPerInnings
   playerScore: number
   computerScore: number
   target: number | null
@@ -23,6 +25,7 @@ export type CricketContext = {
 export type CricketInput = {
   playerName: string
   firstBatter: Innings
+  ballsPerInnings: BallsPerInnings
 }
 
 export type CricketEvent = { type: 'PICK'; number: BallNumber }
@@ -32,8 +35,9 @@ export type CricketEvent = { type: 'PICK'; number: BallNumber }
 const REVEAL_DURATION_MS = 1900
 
 // Uniformly random pick between 1 and 6 — the computer's move on every ball.
+// Range is tied to BALL_NUMBERS (1..6), independent of how many balls per innings.
 function randomBallNumber(): BallNumber {
-  return (Math.floor(Math.random() * BALLS_PER_INNINGS) + 1) as BallNumber
+  return (Math.floor(Math.random() * BALL_NUMBERS.length) + 1) as BallNumber
 }
 
 // Reads the running score for the given side out of the machine context.
@@ -96,19 +100,19 @@ export const cricketMachine = setup({
     }),
   },
   guards: {
-    // True when innings 2 is over: chase target hit, batter out, or 6 balls bowled.
+    // True when innings 2 is over: chase target hit, batter out, or all balls bowled.
     matchOver: ({ context }) => {
       if (context.inningsNumber !== 2) return false
       const chasingScore = scoreFor(context.currentBatter, context)
       const targetReached = context.target !== null && chasingScore >= context.target
       const inningsEnded =
-        context.lastBall?.isOut === true || context.ballsThisInnings >= BALLS_PER_INNINGS
+        context.lastBall?.isOut === true || context.ballsThisInnings >= context.ballsPerInnings
       return targetReached || inningsEnded
     },
-    // True when innings 1 is over: batter out or 6 balls bowled.
+    // True when innings 1 is over: batter out or all balls bowled.
     firstInningsOver: ({ context }) => {
       if (context.inningsNumber !== 1) return false
-      return context.lastBall?.isOut === true || context.ballsThisInnings >= BALLS_PER_INNINGS
+      return context.lastBall?.isOut === true || context.ballsThisInnings >= context.ballsPerInnings
     },
   },
 }).createMachine({
@@ -119,6 +123,7 @@ export const cricketMachine = setup({
     currentBatter: input.firstBatter,
     inningsNumber: 1,
     ballsThisInnings: 0,
+    ballsPerInnings: input.ballsPerInnings,
     playerScore: 0,
     computerScore: 0,
     target: null,

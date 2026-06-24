@@ -14,11 +14,6 @@
   padding: 1rem;
 }
 
-.app-shell > *:not(:first-child) {
-  position: relative;
-  z-index: 1;
-}
-
 .title {
   font-size: clamp(2rem, 5vw, 3rem);
   margin: 0;

@@ -54,6 +54,8 @@ export default function BatOrBowlScreen({ playerName, tossOutcome, onComplete }:
     return () => clearTimeout(timer)
   }, [phase])
 
+  // Fires when the toss-winning player picks Bat or Bowl. Resolves the role
+  // decision and hands it back up to the parent screen.
   const handlePlayerPick = (role: Role) => {
     onComplete({
       chooser: 'player',
@@ -62,6 +64,8 @@ export default function BatOrBowlScreen({ playerName, tossOutcome, onComplete }:
     })
   }
 
+  // Fires when the player acknowledges the computer's auto-pick. Same payload
+  // shape as `handlePlayerPick`, just with chooser='computer'.
   const handleContinueAfterComputer = () => {
     if (!computerRole) return
     onComplete({

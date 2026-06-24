@@ -37,12 +37,15 @@ export default function CoinTossScreen({ playerName, onComplete }: Props) {
 
   const targetRotation = result === null ? 0 : 360 * FLIP_ROTATIONS + (result === 'tails' ? 180 : 0)
 
+  // Records the player's call, rolls the coin's landing side, and kicks off
+  // the flip animation. The crowd ambience handles the "moment" sonically.
   const handlePick = (side: Side) => {
     setUserChoice(side)
     setResult(pickRandomSide())
     setPhase('flipping')
   }
 
+  // After the reveal, derives who won the toss and hands the outcome to the parent.
   const handleContinue = () => {
     if (!userChoice || !result) return
     const winner: TossWinner = userChoice === result ? 'player' : 'computer'

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -6,6 +7,8 @@ import Chip from '@mui/material/Chip'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import { motion, type Variants } from 'framer-motion'
 import AnimatedFace, { type Mood } from '../components/AnimatedFace'
+import { useSounds } from '../audio/useSounds'
+import { useStadiumReaction } from '../stadium/useStadiumReaction'
 import type { BallEvent, MatchResult } from '../game/types'
 
 type Props = {
@@ -26,10 +29,25 @@ const CONFETTI_COLORS = ['#38bdf8', '#a855f7', '#fbbf24', '#22c55e', '#f87171', 
 // innings ball-by-ball, and offers Play Again (keep name) or Change Name (full reset).
 export default function MatchResultScreen({ result, onPlayAgain, onChangeName }: Props) {
   const { playerName, playerScore, computerScore, winner, firstBatter, events } = result
+  const { play } = useSounds()
+  const { triggerReaction } = useStadiumReaction()
 
   const playerWon = winner === 'player'
   const isTie = winner === 'tie'
   const margin = Math.abs(playerScore - computerScore)
+
+  // Play the celebration sound + fire the stadium visual reaction shortly
+  // after mount so both land alongside the trophy spring-in. Tie matches stay
+  // quiet — neither side gets to gloat.
+  useEffect(() => {
+    if (isTie) return
+    const timer = setTimeout(() => {
+      const kind = playerWon ? 'win' : 'lose'
+      play(kind)
+      triggerReaction(kind)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [isTie, playerWon, play, triggerReaction])
 
   const headline = isTie ? "It's a tie!" : playerWon ? `${playerName} wins!` : 'Computer wins!'
   const subline = isTie

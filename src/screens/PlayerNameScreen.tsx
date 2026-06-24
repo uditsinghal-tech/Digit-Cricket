@@ -35,6 +35,8 @@ export default function PlayerNameScreen({ onSubmit }: Props) {
       ? `Max ${MAX_PLAYER_NAME_LENGTH} characters`
       : ' '
 
+  // Form submit handler. Marks the field as touched so errors are allowed to
+  // show, blocks if invalid, otherwise hands the trimmed name to the parent.
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setTouched(true)

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -9,11 +9,13 @@ import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import { useMachine } from '@xstate/react'
 import { cricketMachine, deriveWinner, type CricketContext } from '../game/machine'
 import AnimatedFace, { type Mood } from '../components/AnimatedFace'
+import { useSounds } from '../audio/useSounds'
+import { useStadiumReaction } from '../stadium/useStadiumReaction'
 import {
   BALL_NUMBERS,
-  BALLS_PER_INNINGS,
   type BallEvent,
   type BallNumber,
+  type BallsPerInnings,
   type Innings,
   type MatchResult,
 } from '../game/types'
@@ -21,6 +23,7 @@ import {
 type Props = {
   playerName: string
   firstBatter: Innings
+  ballsPerInnings: BallsPerInnings
   onComplete: (result: MatchResult) => void
 }
 
@@ -41,10 +44,18 @@ function deriveMood(perspective: Innings, ctx: CricketContext, isRevealing: bool
 
 // The active gameplay screen. Drives the cricket state machine and renders
 // the scoreboard, picks area, outcome banner, and the 1-6 pick buttons.
-export default function GameplayScreen({ playerName, firstBatter, onComplete }: Props) {
+export default function GameplayScreen({
+  playerName,
+  firstBatter,
+  ballsPerInnings,
+  onComplete,
+}: Props) {
   const [state, send] = useMachine(cricketMachine, {
-    input: { playerName, firstBatter },
+    input: { playerName, firstBatter, ballsPerInnings },
   })
+  const { play } = useSounds()
+  const { triggerReaction } = useStadiumReaction()
+  const lastPlayedBallRef = useRef<BallEvent | null>(null)
 
   const ctx = state.context
   const isAwaiting = state.matches('awaitingPick')
@@ -57,12 +68,29 @@ export default function GameplayScreen({ playerName, firstBatter, onComplete }: 
     onComplete({
       playerName: ctx.playerName,
       firstBatter: ctx.firstBatter,
+      ballsPerInnings: ctx.ballsPerInnings,
       playerScore: ctx.playerScore,
       computerScore: ctx.computerScore,
       winner: deriveWinner(ctx),
       events: ctx.events,
     })
   }, [isComplete, ctx, onComplete])
+
+  // For wickets and boundaries, schedule the crowd-cheer + commentary AND the
+  // stadium visual reaction to land alongside the OutcomeBanner ~1.1s into
+  // the reveal. Regular runs ride on the ambient crowd alone.
+  useEffect(() => {
+    const ball = ctx.lastBall
+    if (!isRevealing || !ball || ball === lastPlayedBallRef.current) return
+    lastPlayedBallRef.current = ball
+    if (!ball.isOut && ball.runs !== 4 && ball.runs !== 6) return
+    const timer = setTimeout(() => {
+      const kind = ball.isOut ? 'wicket' : ball.runs === 6 ? 'six' : 'four'
+      play(kind)
+      triggerReaction(kind)
+    }, 1100)
+    return () => clearTimeout(timer)
+  }, [isRevealing, ctx.lastBall, play, triggerReaction])
 
   const playerPick =
     ctx.lastBall && (playerBatting ? ctx.lastBall.batterPick : ctx.lastBall.bowlerPick)
@@ -124,7 +152,7 @@ function Scoreboard({
   playerMood: Mood
   computerMood: Mood
 }) {
-  const progress = Math.min(ctx.ballsThisInnings / BALLS_PER_INNINGS, 1) * 100
+  const progress = Math.min(ctx.ballsThisInnings / ctx.ballsPerInnings, 1) * 100
   return (
     <Box
       sx={{
@@ -167,7 +195,7 @@ function Scoreboard({
         sx={{ height: 5, borderRadius: 3 }}
       />
       <Typography variant="caption" sx={{ opacity: 0.6, mt: 0.5, display: 'block' }}>
-        Ball {ctx.ballsThisInnings} of {BALLS_PER_INNINGS}
+        Ball {ctx.ballsThisInnings} of {ctx.ballsPerInnings}
       </Typography>
     </Box>
   )
@@ -334,7 +362,8 @@ function PickCard({
   )
 }
 
-// OUT! / +N runs chip that pops in once both pick cards are visible.
+// OUT! / FOUR! / SIX! / +N runs chip that pops in once both pick cards are visible.
+// Boundaries (4 and 6) get a distinct gradient banner; sixes get a spark burst on top.
 function OutcomeBanner({
   isRevealing,
   lastBall,
@@ -343,8 +372,25 @@ function OutcomeBanner({
   lastBall: BallEvent | null
 }) {
   const showOutcome = isRevealing && lastBall !== null
+  const boundaryType: 'four' | 'six' | null =
+    lastBall && !lastBall.isOut
+      ? lastBall.runs === 6
+        ? 'six'
+        : lastBall.runs === 4
+          ? 'four'
+          : null
+      : null
   return (
-    <Box sx={{ minHeight: 44, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+    <Box
+      sx={{
+        minHeight: 44,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        position: 'relative',
+      }}
+    >
+      {showOutcome && boundaryType === 'six' && <SparkBurst />}
       <AnimatePresence mode="wait">
         {showOutcome && lastBall && (
           <motion.div
@@ -353,6 +399,7 @@ function OutcomeBanner({
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ delay: 1.1, duration: 0.35, type: 'spring', stiffness: 200 }}
+            style={{ position: 'relative', zIndex: 1 }}
           >
             {lastBall.isOut ? (
               <Chip
@@ -366,6 +413,8 @@ function OutcomeBanner({
                   letterSpacing: '0.15em',
                 }}
               />
+            ) : boundaryType ? (
+              <BoundaryBanner type={boundaryType} />
             ) : (
               <Chip
                 label={`+${lastBall.runs} run${lastBall.runs === 1 ? '' : 's'}`}
@@ -418,5 +467,82 @@ function PickButtons({
         ))}
       </Stack>
     </Stack>
+  )
+}
+
+// Boundary banner shown in place of the regular runs chip when the batter
+// scores a 4 or a 6. Distinct gradient + glow per type, same vertical footprint
+// so the layout doesn't shift.
+function BoundaryBanner({ type }: { type: 'four' | 'six' }) {
+  const isSix = type === 'six'
+  return (
+    <Box
+      sx={{
+        px: 2.5,
+        py: 1.1,
+        borderRadius: 9999,
+        background: isSix
+          ? 'linear-gradient(135deg, #fbbf24 0%, #ec4899 50%, #a855f7 100%)'
+          : 'linear-gradient(135deg, #22c55e 0%, #38bdf8 100%)',
+        color: '#0f172a',
+        fontWeight: 900,
+        fontSize: '1rem',
+        letterSpacing: '0.2em',
+        textTransform: 'uppercase',
+        boxShadow: isSix
+          ? '0 0 32px rgba(251, 191, 36, 0.55), 0 0 14px rgba(168, 85, 247, 0.4)'
+          : '0 0 24px rgba(56, 189, 248, 0.45)',
+      }}
+    >
+      {isSix ? 'SIX!' : 'FOUR!'}
+    </Box>
+  )
+}
+
+// Star-burst overlay rendered around the SIX! banner. Six small dots fly out
+// radially from the centre and fade, kept off the normal flow with absolute positioning.
+function SparkBurst() {
+  const sparks = Array.from({ length: 8 }).map((_, i) => {
+    const angle = (i / 8) * Math.PI * 2
+    return {
+      dx: Math.cos(angle) * 56,
+      dy: Math.sin(angle) * 56,
+      delay: 1.15 + (i % 4) * 0.04,
+    }
+  })
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {sparks.map((s, i) => (
+        <motion.div
+          key={i}
+          initial={{ x: 0, y: 0, opacity: 0, scale: 0 }}
+          animate={{
+            x: s.dx,
+            y: s.dy,
+            opacity: [0, 1, 0],
+            scale: [0, 1, 0.4],
+          }}
+          transition={{ duration: 0.7, delay: s.delay, ease: 'easeOut' }}
+          style={{
+            position: 'absolute',
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            background: '#fde68a',
+            boxShadow: '0 0 12px #fbbf24, 0 0 4px #fef3c7',
+          }}
+        />
+      ))}
+    </Box>
   )
 }
