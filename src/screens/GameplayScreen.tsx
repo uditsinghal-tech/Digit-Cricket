@@ -23,6 +23,7 @@ import {
   type GameMode,
   type Innings,
   type MatchResult,
+  type TotalInnings,
 } from '../game/types'
 
 type Props = {
@@ -32,6 +33,10 @@ type Props = {
   opponentName: string
   firstBatter: Innings
   ballsPerInnings: BallsPerInnings
+  // Total innings the match runs for. Optional — defaults to 2 so the
+  // multiplayer call site (which doesn't surface the test format yet)
+  // keeps working without change.
+  totalInnings?: TotalInnings
   // Defaults to 'singleplayer'. In multiplayer the screen waits for both
   // picks (own + opponent's via PeerJS) before dispatching to the machine.
   mode?: GameMode
@@ -76,11 +81,12 @@ export default function GameplayScreen({
   opponentName,
   firstBatter,
   ballsPerInnings,
+  totalInnings = 2,
   mode = 'singleplayer',
   onComplete,
 }: Props) {
   const [state, send] = useMachine(cricketMachine, {
-    input: { playerName, firstBatter, ballsPerInnings },
+    input: { playerName, firstBatter, ballsPerInnings, totalInnings },
   })
   const { play } = useSounds()
   const { triggerReaction } = useStadiumReaction()
@@ -142,6 +148,7 @@ export default function GameplayScreen({
       playerName: ctx.playerName,
       firstBatter: ctx.firstBatter,
       ballsPerInnings: ctx.ballsPerInnings,
+      totalInnings: ctx.totalInnings,
       playerScore: ctx.playerScore,
       computerScore: ctx.computerScore,
       winner: deriveWinner(ctx),

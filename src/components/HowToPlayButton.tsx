@@ -88,11 +88,17 @@ export default function HowToPlayButton() {
               <Box component="ul" sx={{ pl: 2.5, my: 0.5 }}>
                 <li>
                   <b>6-ball match</b> — sharp and snappy. 6 balls per innings,
-                  one wicket each. Best for a quick round.
+                  one wicket each, 2 innings total. Best for a quick round.
                 </li>
                 <li>
                   <b>12-ball match</b> — more room to build a chase. 12 balls per
-                  innings, one wicket each. Still ends fast but rewards pacing.
+                  innings, one wicket each, 2 innings total.
+                </li>
+                <li>
+                  <b>Test match</b> — both sides bat twice. The first batter
+                  plays innings 1 + 3 and the second batter plays innings 2 + 4,
+                  six balls per innings. The chase target is set when the final
+                  innings starts; highest combined total wins.
                 </li>
               </Box>
             </Section>

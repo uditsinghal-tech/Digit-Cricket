@@ -6,15 +6,21 @@ import {
   type BallsPerInnings,
   type Innings,
   type MatchWinner,
+  type TotalInnings,
 } from './types'
 
 export type CricketContext = {
   playerName: string
   firstBatter: Innings
   currentBatter: Innings
-  inningsNumber: 1 | 2
+  // Widened from 1|2 to 1..4 to support the 4-innings test match format.
+  // For a standard 2-innings match this still only ever reaches 2.
+  inningsNumber: 1 | 2 | 3 | 4
   ballsThisInnings: number
   ballsPerInnings: BallsPerInnings
+  // Total innings the match runs for. Drives the matchOver and switch
+  // guards generically so the same machine handles both formats.
+  totalInnings: TotalInnings
   playerScore: number
   computerScore: number
   target: number | null
@@ -26,6 +32,9 @@ type CricketInput = {
   playerName: string
   firstBatter: Innings
   ballsPerInnings: BallsPerInnings
+  // Optional for backward compatibility — callers that don't pass it get
+  // the original 2-innings behaviour.
+  totalInnings?: TotalInnings
 }
 
 // The PICK event carries the local player's pick. In multiplayer the view
@@ -90,33 +99,49 @@ export const cricketMachine = setup({
         events: [...context.events, ballEvent],
       }
     }),
-    // Flips the batter, advances to innings 2, and seeds the chase target
-    // as the first innings score + 1.
+    // Advances to the next innings, flips the batter, and (only when
+    // entering the FINAL innings) seeds the chase target as the opposing
+    // side's accumulated total + 1.
+    //
+    // For a 2-innings match the chase target lands at the start of innings
+    // 2 — same as before. For a 4-innings test match it lands at the start
+    // of innings 4, by which point the first batter has played both their
+    // innings and their cumulative score is what the second batter has
+    // to chase. Intermediate innings (innings 2 and 3 of a test) have
+    // target = null, since there's no end-of-match condition yet.
     switchInnings: assign(({ context }) => {
-      const firstInningsScore = scoreFor(context.currentBatter, context)
+      const nextInningsNumber = (context.inningsNumber + 1) as 1 | 2 | 3 | 4
       const newBatter: Innings = context.currentBatter === 'player' ? 'computer' : 'player'
+      const isFinalInnings = nextInningsNumber === context.totalInnings
+      // The chaser needs to beat the OTHER side's total runs; that side is
+      // whoever is NOT the new batter.
+      const opposingSideScore = newBatter === 'player' ? context.computerScore : context.playerScore
+      const target = isFinalInnings ? opposingSideScore + 1 : null
       return {
         currentBatter: newBatter,
-        inningsNumber: 2 as const,
+        inningsNumber: nextInningsNumber,
         ballsThisInnings: 0,
-        target: firstInningsScore + 1,
+        target,
         lastBall: null,
       }
     }),
   },
   guards: {
-    // True when innings 2 is over: chase target hit, batter out, or all balls bowled.
+    // True when the FINAL innings is over: chase target hit, batter out,
+    // or all balls bowled. Generalises across both 2- and 4-innings formats
+    // by comparing `inningsNumber` to the configured `totalInnings`.
     matchOver: ({ context }) => {
-      if (context.inningsNumber !== 2) return false
+      if (context.inningsNumber !== context.totalInnings) return false
       const chasingScore = scoreFor(context.currentBatter, context)
       const targetReached = context.target !== null && chasingScore >= context.target
       const inningsEnded =
         context.lastBall?.isOut === true || context.ballsThisInnings >= context.ballsPerInnings
       return targetReached || inningsEnded
     },
-    // True when innings 1 is over: batter out or all balls bowled.
-    firstInningsOver: ({ context }) => {
-      if (context.inningsNumber !== 1) return false
+    // True when a non-final innings is over (batter out or all balls
+    // bowled) and the machine needs to switch to the next innings.
+    needsInningsSwitch: ({ context }) => {
+      if (context.inningsNumber >= context.totalInnings) return false
       return context.lastBall?.isOut === true || context.ballsThisInnings >= context.ballsPerInnings
     },
   },
@@ -129,6 +154,7 @@ export const cricketMachine = setup({
     inningsNumber: 1,
     ballsThisInnings: 0,
     ballsPerInnings: input.ballsPerInnings,
+    totalInnings: input.totalInnings ?? 2,
     playerScore: 0,
     computerScore: 0,
     target: null,
@@ -153,7 +179,7 @@ export const cricketMachine = setup({
     evaluating: {
       always: [
         { guard: 'matchOver', target: 'complete' },
-        { guard: 'firstInningsOver', target: 'switchingInnings' },
+        { guard: 'needsInningsSwitch', target: 'switchingInnings' },
         { target: 'awaitingPick' },
       ],
     },

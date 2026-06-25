@@ -24,7 +24,9 @@ import type {
   RoleDecision,
   ScreenName,
   TossOutcome,
+  TotalInnings,
 } from './game/types'
+import type { MatchLengthChoice } from './screens/MatchLengthScreen'
 import './App.css'
 
 // Top-level app. Owns which screen is showing and the running match data
@@ -34,6 +36,10 @@ function App() {
   const [screen, setScreen] = useState<ScreenName>('playerName')
   const [playerName, setPlayerName] = useState('')
   const [ballsPerInnings, setBallsPerInnings] = useState<BallsPerInnings | null>(null)
+  // Total innings the match runs for. Defaults to 2 (standard format).
+  // Set to 4 only when the user picks the Test Match tile on the length
+  // screen. Multiplayer paths leave it at 2 (no test format over the wire).
+  const [totalInnings, setTotalInnings] = useState<TotalInnings>(2)
   const [tossOutcome, setTossOutcome] = useState<TossOutcome | null>(null)
   const [roleDecision, setRoleDecision] = useState<RoleDecision | null>(null)
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null)
@@ -100,10 +106,11 @@ function App() {
     setScreen('multiplayerCoinToss')
   }
 
-  // Singleplayer match-length picker callback — saves the chosen number of
-  // balls per innings and advances to the coin toss.
-  const handleMatchLengthSelect = (count: BallsPerInnings) => {
-    setBallsPerInnings(count)
+  // Singleplayer match-length picker callback — saves the chosen format
+  // (balls per innings + total innings) and advances to the coin toss.
+  const handleMatchLengthSelect = (choice: MatchLengthChoice) => {
+    setBallsPerInnings(choice.ballsPerInnings)
+    setTotalInnings(choice.totalInnings)
     setScreen('coinToss')
   }
 
@@ -166,6 +173,7 @@ function App() {
     }
     setPlayerName('')
     setBallsPerInnings(null)
+    setTotalInnings(2)
     setTossOutcome(null)
     setRoleDecision(null)
     setMatchResult(null)
@@ -281,6 +289,7 @@ function App() {
             opponentName="Computer"
             firstBatter={roleDecision.firstInnings}
             ballsPerInnings={ballsPerInnings}
+            totalInnings={totalInnings}
             onComplete={handleMatchComplete}
           />
         )}

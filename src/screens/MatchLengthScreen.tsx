@@ -4,11 +4,18 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { motion, type Variants } from 'framer-motion'
-import type { BallsPerInnings } from '../game/types'
+import type { BallsPerInnings, TotalInnings } from '../game/types'
+
+// A picked match shape: how many balls each innings and how many innings
+// total. 2 innings = standard match; 4 innings = test match.
+export type MatchLengthChoice = {
+  ballsPerInnings: BallsPerInnings
+  totalInnings: TotalInnings
+}
 
 type Props = {
   playerName: string
-  onSelect: (count: BallsPerInnings) => void
+  onSelect: (choice: MatchLengthChoice) => void
   onBack: () => void
 }
 
@@ -42,8 +49,24 @@ export default function MatchLengthScreen({ playerName, onSelect, onBack }: Prop
           </Stack>
 
           <Stack direction="row" spacing={2} sx={{ width: '100%' }}>
-            <LengthButton count={6} label="6 Ball Game" sub="1 over" onClick={onSelect} />
-            <LengthButton count={12} label="12 Ball Game" sub="2 overs" onClick={onSelect} />
+            <LengthButton
+              label="6 Ball Game"
+              sub="1 over, 2 innings"
+              color="primary"
+              onClick={() => onSelect({ ballsPerInnings: 6, totalInnings: 2 })}
+            />
+            <LengthButton
+              label="12 Ball Game"
+              sub="2 overs, 2 innings"
+              color="secondary"
+              onClick={() => onSelect({ ballsPerInnings: 12, totalInnings: 2 })}
+            />
+            <LengthButton
+              label="Test Match"
+              sub="6 balls, 4 innings"
+              color="warning"
+              onClick={() => onSelect({ ballsPerInnings: 6, totalInnings: 4 })}
+            />
           </Stack>
 
           <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>
@@ -55,26 +78,26 @@ export default function MatchLengthScreen({ playerName, onSelect, onBack }: Prop
   )
 }
 
-// Tile button for a match-length choice. Big label on top, descriptor below.
-// Colour-keyed (primary for 6, secondary for 12) so the two read as distinct picks.
+// Tile button for one of the three match-format choices. Caller decides
+// the colour (primary / secondary / warning) and the onClick payload — the
+// button itself just renders the label + sub-label.
 function LengthButton({
-  count,
   label,
   sub,
+  color,
   onClick,
 }: {
-  count: BallsPerInnings
   label: string
   sub: string
-  onClick: (count: BallsPerInnings) => void
+  color: 'primary' | 'secondary' | 'warning'
+  onClick: () => void
 }) {
-  const isShort = count === 6
   return (
     <Button
       variant="contained"
-      color={isShort ? 'primary' : 'secondary'}
+      color={color}
       size="large"
-      onClick={() => onClick(count)}
+      onClick={onClick}
       sx={{
         flex: 1,
         py: 2.5,

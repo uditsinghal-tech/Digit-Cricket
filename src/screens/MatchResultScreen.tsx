@@ -32,7 +32,8 @@ const CONFETTI_COLORS = ['#38bdf8', '#a855f7', '#fbbf24', '#22c55e', '#f87171', 
 // In multiplayer, Play Again is a handshake — both peers must click before
 // the rematch actually starts.
 export default function MatchResultScreen({ result, onPlayAgain, onChangeName }: Props) {
-  const { playerName, playerScore, computerScore, winner, firstBatter, events } = result
+  const { playerName, playerScore, computerScore, winner, firstBatter, events, totalInnings } =
+    result
   const { play } = useSounds()
   const { triggerReaction } = useStadiumReaction()
   const { status: multiplayerStatus, opponentName, send: sendNetwork, subscribe } = useMultiplayer()
@@ -102,8 +103,14 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
   const playerMood: Mood = isTie ? 'neutral' : playerWon ? 'happy' : 'sad'
   const computerMood: Mood = isTie ? 'neutral' : playerWon ? 'sad' : 'happy'
 
-  const inningsOneEvents = events.filter((e) => e.innings === 1)
-  const inningsTwoEvents = events.filter((e) => e.innings === 2)
+  // For a 4-innings test match the first batter plays innings 1 + 3 and
+  // the second batter plays innings 2 + 4. Fold those pairs into one
+  // events list per side so the existing two-column summary keeps working
+  // regardless of format.
+  const firstBatterInnings: (1 | 2 | 3 | 4)[] = totalInnings === 4 ? [1, 3] : [1]
+  const secondBatterInnings: (1 | 2 | 3 | 4)[] = totalInnings === 4 ? [2, 4] : [2]
+  const inningsOneEvents = events.filter((e) => firstBatterInnings.includes(e.innings))
+  const inningsTwoEvents = events.filter((e) => secondBatterInnings.includes(e.innings))
   const firstBatterLabel = firstBatter === 'player' ? playerName : 'Computer'
   const secondBatterLabel = firstBatter === 'player' ? 'Computer' : playerName
   const firstInningsTotal = firstBatter === 'player' ? playerScore : computerScore
@@ -196,13 +203,21 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
 
           <Stack spacing={1}>
             <InningsRow
-              label={`Innings 1 — ${firstBatterLabel}`}
+              label={
+                totalInnings === 4
+                  ? `Innings 1+3 — ${firstBatterLabel}`
+                  : `Innings 1 — ${firstBatterLabel}`
+              }
               events={inningsOneEvents}
               total={firstInningsTotal}
               animationOffset={0.8}
             />
             <InningsRow
-              label={`Innings 2 — ${secondBatterLabel}`}
+              label={
+                totalInnings === 4
+                  ? `Innings 2+4 — ${secondBatterLabel}`
+                  : `Innings 2 — ${secondBatterLabel}`
+              }
               events={inningsTwoEvents}
               total={secondInningsTotal}
               animationOffset={1.0}

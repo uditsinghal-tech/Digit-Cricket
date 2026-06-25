@@ -52,8 +52,17 @@ export const BALL_NUMBERS: readonly (1 | 2 | 3 | 4 | 5 | 6)[] = [1, 2, 3, 4, 5, 
 // MatchLengthScreen and carried through to the cricket machine.
 export type BallsPerInnings = 6 | 12
 
+// How many innings the match runs for in total.
+//   2 → standard 6-ball / 12-ball match: each side bats once.
+//   4 → test match: each side bats twice (innings 1+3 belong to the first
+//       batter, innings 2+4 belong to the second batter).
+// The cricket machine drives the innings counter from this; nothing else.
+export type TotalInnings = 2 | 4
+
 export type BallEvent = {
-  innings: 1 | 2
+  // Widened to 1..4 so the test format can tag innings 3 and 4 without a
+  // schema change. Standard 6/12-ball matches still only ever emit 1 or 2.
+  innings: 1 | 2 | 3 | 4
   batter: Innings
   batterPick: BallNumber
   bowlerPick: BallNumber
@@ -67,6 +76,10 @@ export type MatchResult = {
   playerName: string
   firstBatter: Innings
   ballsPerInnings: BallsPerInnings
+  // Carried into the result so MatchResultScreen knows whether to render
+  // one batting card per side (2 innings) or fold innings 1+3 and 2+4 into
+  // one combined card per side (4 innings / test match).
+  totalInnings: TotalInnings
   playerScore: number
   computerScore: number
   winner: MatchWinner
