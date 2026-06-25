@@ -176,6 +176,7 @@ function App() {
       <StadiumBackground />
       <DayNightToggle />
       <MuteToggle />
+      <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
       <AnimatePresence mode="wait">
         {screen === 'playerName' && (
           <PlayerNameScreen key="player-name" onSubmit={handleNameSubmit} />
@@ -258,6 +259,7 @@ function App() {
           />
         )}
       </AnimatePresence>
+      </Box>
     </Box>
   )
 }

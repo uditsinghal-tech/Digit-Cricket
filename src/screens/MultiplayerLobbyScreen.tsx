@@ -296,10 +296,25 @@ function HostingView({
 
       {roomCode && (
         <>
-          <Typography variant="h3" sx={{ fontFamily: 'monospace', letterSpacing: '0.2em' }}>
-            {roomCode}
-          </Typography>
-          <Button onClick={onCopy} startIcon={<ContentCopyIcon />} size="small">
+          <Box
+            className="room-code-box"
+            sx={{
+              px: 3,
+              py: 1.5,
+              borderRadius: 2,
+              border: '2px solid #a855f7',
+            }}
+          >
+            <Typography variant="h3" sx={{ fontFamily: 'monospace', letterSpacing: '0.2em' }}>
+              {roomCode}
+            </Typography>
+          </Box>
+          <Button
+            onClick={onCopy}
+            startIcon={<ContentCopyIcon />}
+            size="small"
+            className="purple-accent"
+          >
             Copy code
           </Button>
         </>
@@ -324,7 +339,7 @@ function HostingView({
             Try again
           </Button>
         )}
-        <Button variant="outlined" onClick={onCancel}>
+        <Button variant="outlined" onClick={onCancel} className="purple-accent">
           Cancel
         </Button>
       </Stack>

@@ -6,6 +6,8 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
+import SportsCricketIcon from '@mui/icons-material/SportsCricket'
+import SportsBaseballIcon from '@mui/icons-material/SportsBaseball'
 import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import { useMachine } from '@xstate/react'
 import { cricketMachine, deriveWinner, type CricketContext } from '../game/machine'
@@ -41,6 +43,20 @@ const containerVariants = {
   animate: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
   exit: { opacity: 0, y: -24, transition: { duration: 0.3, ease: 'easeIn' } },
 } satisfies Variants
+
+// Per-ball think-time. If the local player doesn't pick a 1-6 within this
+// window, the timer auto-fires a PICK with value 0 (the "no-pick" sentinel
+// that the cricket rules degrade safely against — see BallNumber type docs).
+const BALL_TIMER_SECONDS = 10
+// When the remaining seconds drop to this value (or below) the clock UI
+// flips from the calm "green" palette to the urgent "red" palette so the
+// player feels the deadline approaching. 4s ≈ 40% of the window — late
+// enough to feel like a real warning, early enough to still react.
+const TIMER_WARNING_THRESHOLD = 4
+// Number of dots arranged around the clock boundary. One per second so the
+// dot-extinguish animation reads as a literal countdown — each tick visibly
+// loses a dot from the rim.
+const TIMER_DOTS = BALL_TIMER_SECONDS
 
 // Picks a face mood for one side based on the latest ball: batter smiles
 // on runs, frowns on out; bowler is the opposite. Neutral outside the reveal.
@@ -149,9 +165,10 @@ export default function GameplayScreen({
     return () => clearTimeout(timer)
   }, [isRevealing, ctx.lastBall, play, triggerReaction])
 
-  // Handles a 1-6 button press. In singleplayer the press dispatches PICK
-  // straight to the machine. In multiplayer it stashes the local pick and
-  // broadcasts it over the data channel; the machine waits for both picks.
+  // Handles a 1-6 button press OR the timer auto-pick of 0. In singleplayer
+  // the press dispatches PICK straight to the machine. In multiplayer it
+  // stashes the local pick and broadcasts it over the data channel; the
+  // machine waits for both picks.
   const handlePick = (n: BallNumber) => {
     if (isMultiplayer) {
       if (pendingPicks.local !== null) return // already picked this ball; ignore
@@ -161,6 +178,62 @@ export default function GameplayScreen({
       send({ type: 'PICK', number: n })
     }
   }
+
+  // --- Per-ball countdown timer ---
+  // Visible seconds-remaining for the current ball. Drives both the central
+  // digit on the clock face and the dot-extinguish animation around its rim.
+  const [secondsLeft, setSecondsLeft] = useState<number>(BALL_TIMER_SECONDS)
+
+  // We need to fire `handlePick(0)` from inside a setTimeout callback that
+  // outlives the render that scheduled it. Capturing handlePick directly
+  // would close over a potentially-stale `pendingPicks` / `isMultiplayer`,
+  // so we mirror the latest function into a ref and call through that ref.
+  const handlePickRef = useRef(handlePick)
+  useEffect(() => {
+    handlePickRef.current = handlePick
+  })
+
+  // Timer effect — runs once per "the player needs to make a pick" window.
+  // Three things happen here:
+  //   1. The visible counter is reset to BALL_TIMER_SECONDS as soon as a new
+  //      pick window opens (new ball or fresh innings).
+  //   2. A setInterval ticks the visible counter down one per second so the
+  //      clock-face digit + the dot ring update in lockstep with wall-clock.
+  //   3. A separate setTimeout fires exactly at BALL_TIMER_SECONDS to invoke
+  //      the auto-pick with value 0 — independent of the visible tick so a
+  //      slow render doesn't postpone the actual deadline.
+  //
+  // The effect bails (and any prior timer is cleaned up by the return fn)
+  // when:
+  //   - The state machine isn't waiting for a pick (revealing / complete).
+  //   - The match has ended.
+  //   - The local peer has already picked in multiplayer (we don't want to
+  //     fire the auto-pick after a manual one, and we don't want the dial
+  //     to keep ticking while the opponent's pick is still in flight).
+  useEffect(() => {
+    if (!isAwaiting || isComplete) return
+    if (isMultiplayer && pendingPicks.local !== null) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSecondsLeft(BALL_TIMER_SECONDS)
+    const tick = window.setInterval(() => {
+      setSecondsLeft((s) => Math.max(s - 1, 0))
+    }, 1000)
+    const fire = window.setTimeout(() => {
+      // Read through the ref — `handlePick` here may be a stale closure.
+      handlePickRef.current(0)
+    }, BALL_TIMER_SECONDS * 1000)
+    return () => {
+      window.clearInterval(tick)
+      window.clearTimeout(fire)
+    }
+  }, [
+    isAwaiting,
+    isComplete,
+    isMultiplayer,
+    pendingPicks.local,
+    ctx.ballsThisInnings,
+    ctx.inningsNumber,
+  ])
 
   const playerPick =
     ctx.lastBall && (playerBatting ? ctx.lastBall.batterPick : ctx.lastBall.bowlerPick)
@@ -180,6 +253,12 @@ export default function GameplayScreen({
   const waitingForOpponent =
     isMultiplayer && isAwaiting && pendingPicks.local !== null && pendingPicks.opp === null
 
+  // The clock is only meaningful while the local player still owes a pick.
+  // Hide it once they've committed (singleplayer machine moves past
+  // awaitingPick; multiplayer flips pendingPicks.local) and once the match
+  // has ended.
+  const showTimer = isAwaiting && !isComplete && (!isMultiplayer || pendingPicks.local === null)
+
   return (
     <motion.div
       key="gameplay-screen"
@@ -191,13 +270,30 @@ export default function GameplayScreen({
     >
       <Box sx={{ width: '100%', maxWidth: 520, px: 2, py: 1.5 }}>
         <Stack spacing={1.75} alignItems="stretch">
-          <Scoreboard
-            ctx={ctx}
-            playerName={playerName}
-            opponentName={opponentName}
-            playerMood={playerMood}
-            computerMood={computerMood}
-          />
+          <Box sx={{ position: 'relative' }}>
+            <Scoreboard
+              ctx={ctx}
+              playerName={playerName}
+              opponentName={opponentName}
+              playerMood={playerMood}
+              computerMood={computerMood}
+              playerBatting={playerBatting}
+            />
+            {showTimer && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: '100%',
+                  ml: 5,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  zIndex: 10,
+                }}
+              >
+                <BallTimer secondsLeft={secondsLeft} />
+              </Box>
+            )}
+          </Box>
 
           <RoleBanner
             playerBatting={playerBatting}
@@ -242,12 +338,14 @@ function Scoreboard({
   opponentName,
   playerMood,
   computerMood,
+  playerBatting,
 }: {
   ctx: CricketContext
   playerName: string
   opponentName: string
   playerMood: Mood
   computerMood: Mood
+  playerBatting: boolean
 }) {
   const progress = Math.min(ctx.ballsThisInnings / ctx.ballsPerInnings, 1) * 100
   return (
@@ -273,7 +371,13 @@ function Scoreboard({
       </Stack>
 
       <Stack direction="row" justifyContent="space-around" alignItems="center" sx={{ mb: 0.75 }}>
-        <PlayerCard label={playerName} score={ctx.playerScore} mood={playerMood} accent="primary" />
+        <PlayerCard
+          label={playerName}
+          score={ctx.playerScore}
+          mood={playerMood}
+          accent="primary"
+          isBatting={playerBatting}
+        />
         <Typography variant="h6" sx={{ opacity: 0.45 }}>
           vs
         </Typography>
@@ -282,6 +386,7 @@ function Scoreboard({
           score={ctx.computerScore}
           mood={computerMood}
           accent="secondary"
+          isBatting={!playerBatting}
         />
       </Stack>
 
@@ -304,18 +409,24 @@ function PlayerCard({
   score,
   mood,
   accent,
+  isBatting,
 }: {
   label: string
   score: number
   mood: Mood
   accent: 'primary' | 'secondary'
+  isBatting: boolean
 }) {
   const variant = accent === 'primary' ? 'player' : 'computer'
+  const RoleIcon = isBatting ? SportsCricketIcon : SportsBaseballIcon
   return (
     <Stack alignItems="center" spacing={0.25} sx={{ minWidth: 110 }}>
-      <Typography variant="caption" sx={{ opacity: 0.7, letterSpacing: '0.08em' }}>
-        {label.toUpperCase()}
-      </Typography>
+      <Stack direction="row" spacing={0.5} alignItems="center">
+        <RoleIcon sx={{ fontSize: 14, color: `${accent}.light` }} />
+        <Typography variant="caption" sx={{ opacity: 0.7, letterSpacing: '0.08em' }}>
+          {label.toUpperCase()}
+        </Typography>
+      </Stack>
       <AnimatedFace variant={variant} mood={mood} size={52} />
       <AnimatedScore score={score} accent={accent} />
     </Stack>
@@ -657,5 +768,105 @@ function SparkBurst() {
         />
       ))}
     </Box>
+  )
+}
+
+// Animated per-ball countdown clock.
+//
+// Visual anatomy:
+//   - A circular rim of TIMER_DOTS dots (one per second). Dots that
+//     correspond to seconds the player still has are lit; the rest are
+//     dimmed out. So at T-10 all 10 dots glow, at T-1 only one does.
+//   - The central digit shows the same `secondsLeft` value numerically
+//     for a clear "this is how long you have" read.
+//   - Below TIMER_WARNING_THRESHOLD seconds the entire palette flips from
+//     green to red — both the rim dots and the central digit — and the
+//     whole thing pulses gently via framer-motion to draw the eye.
+//
+// All visual state derives purely from the `secondsLeft` prop — no
+// internal timer state. The owning component (GameplayScreen) holds the
+// real countdown logic and feeds the latest value down on every tick.
+function BallTimer({ secondsLeft }: { secondsLeft: number }) {
+  // Critical phase: rim + digit go red, container pulses. Triggered the
+  // moment the threshold is crossed, not when the timer hits zero, so the
+  // player feels the warning before the deadline lands.
+  const isCritical = secondsLeft <= TIMER_WARNING_THRESHOLD
+  // Box size in CSS pixels. The dots are positioned with absolute math
+  // against this, so changing the constant resizes everything cleanly.
+  const size = 110
+  // Where the dots live around the rim. Slightly inset from the edge so
+  // the dot's stroke / glow doesn't clip outside the container.
+  const radius = size / 2 - 6
+
+  // Hex palettes for the two phases. Pulled out so the JSX stays terse
+  // and the green↔red flip happens in a single ternary at use sites.
+  const litColor = isCritical ? '#ef4444' : '#22c55e'
+  const dimColor = 'rgba(148, 163, 184, 0.18)'
+
+  return (
+    <motion.div
+      // Container-level pulse during the critical phase. Subtle (1 → 1.07
+      // → 1) so it reads as urgency without becoming distracting.
+      animate={isCritical ? { scale: [1, 1.07, 1] } : { scale: 1 }}
+      transition={
+        isCritical ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }
+      }
+      style={{
+        width: size,
+        height: size,
+        position: 'relative',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+      aria-label={`${secondsLeft} seconds left to pick`}
+    >
+      {Array.from({ length: TIMER_DOTS }).map((_, i) => {
+        // Lay the dots out around the circle. Subtract π/2 so dot 0 sits
+        // at 12 o'clock (top) and they rotate clockwise from there.
+        const angle = (i / TIMER_DOTS) * Math.PI * 2 - Math.PI / 2
+        const cx = size / 2 + Math.cos(angle) * radius
+        const cy = size / 2 + Math.sin(angle) * radius
+        // A dot is "lit" if its index falls within the remaining-seconds
+        // window. So as the timer ticks, the highest-indexed dot dims
+        // first, then the next, etc., giving the visible countdown.
+        const isLit = i < secondsLeft
+        return (
+          <Box
+            key={i}
+            sx={{
+              position: 'absolute',
+              left: cx - 4,
+              top: cy - 4,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: isLit ? litColor : dimColor,
+              // Lit dots get a soft glow so the rim "shines"; dim dots
+              // stay flat so the contrast is obvious at a glance.
+              boxShadow: isLit ? `0 0 6px ${litColor}` : 'none',
+              // Smooth the colour change so the green→red transition at
+              // the threshold reads as a flip, not a flicker.
+              transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
+            }}
+          />
+        )
+      })}
+      <Typography
+        sx={{
+          fontFamily: 'monospace',
+          fontSize: '2rem',
+          fontWeight: 800,
+          color: litColor,
+          lineHeight: 1,
+          // Soft text-glow matches the rim, ties the digit visually to
+          // the surrounding dots.
+          textShadow: `0 0 8px ${litColor}66`,
+          transition: 'color 0.2s ease, text-shadow 0.2s ease',
+        }}
+      >
+        {secondsLeft}
+      </Typography>
+    </motion.div>
   )
 }

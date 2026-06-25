@@ -83,6 +83,7 @@ export default function PlayerNameScreen({ onSubmit }: Props) {
       >
         <Stack spacing={4} alignItems="center">
           <motion.div
+            className="welcome-logo"
             initial={{ rotate: -8, scale: 0.8, opacity: 0 }}
             animate={{ rotate: 0, scale: 1, opacity: 1 }}
             transition={{ delay: 0.15, type: 'spring', stiffness: 120 }}

@@ -29,6 +29,7 @@ export function StadiumModeProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
+    document.body.dataset.stadiumMode = mode
   }, [mode])
 
   // Flips between 'day' and 'night'. Persistence happens in the effect above.

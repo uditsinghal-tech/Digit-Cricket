@@ -21,5 +21,33 @@
   background: linear-gradient(135deg, #38bdf8 0%, #a855f7 100%);
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
+  -webkit-text-fill-color: transparent;
+  color: #38bdf8;
 }
+
+/* Day mode: recolour the welcome / mode-select titles and the welcome logo
+   to solid purple so they stay distinct against the light sky. */
+body[data-stadium-mode='day'] .title {
+  background: none;
+  -webkit-text-fill-color: #6b21a8;
+  color: #6b21a8;
+}
+body[data-stadium-mode='day'] .welcome-logo .MuiSvgIcon-root {
+  color: #6b21a8;
+}
+body[data-stadium-mode='day'] .room-code-box {
+  border-color: #6b21a8;
+}
+
+/* Purple-accent buttons: text + icon + border-colour tied to the room-code
+   palette. Selector is `.MuiButton-root.purple-accent` so it beats MUI's
+   emotion-injected single-class rules without needing !important. */
+.MuiButton-root.purple-accent {
+  color: #a855f7;
+  border-color: #a855f7;
+}
+body[data-stadium-mode='day'] .MuiButton-root.purple-accent {
+  color: #6b21a8;
+  border-color: #6b21a8;
+}
+
