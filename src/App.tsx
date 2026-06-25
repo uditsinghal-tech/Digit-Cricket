@@ -1,8 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import { AnimatePresence } from 'framer-motion'
 import PlayerNameScreen from './screens/PlayerNameScreen'
+import ModeSelectionScreen from './screens/ModeSelectionScreen'
 import MatchLengthScreen from './screens/MatchLengthScreen'
+import MultiplayerLobbyScreen from './screens/MultiplayerLobbyScreen'
+import MultiplayerMatchLengthScreen from './screens/MultiplayerMatchLengthScreen'
+import MultiplayerCoinTossScreen from './screens/MultiplayerCoinTossScreen'
+import MultiplayerBatOrBowlScreen from './screens/MultiplayerBatOrBowlScreen'
 import CoinTossScreen from './screens/CoinTossScreen'
 import BatOrBowlScreen from './screens/BatOrBowlScreen'
 import GameplayScreen from './screens/GameplayScreen'
@@ -10,8 +15,10 @@ import MatchResultScreen from './screens/MatchResultScreen'
 import StadiumBackground from './components/StadiumBackground'
 import MuteToggle from './components/MuteToggle'
 import DayNightToggle from './components/DayNightToggle'
+import { useMultiplayer } from './multiplayer/useMultiplayer'
 import type {
   BallsPerInnings,
+  GameMode,
   MatchResult,
   RoleDecision,
   ScreenName,
@@ -30,16 +37,83 @@ function App() {
   const [roleDecision, setRoleDecision] = useState<RoleDecision | null>(null)
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null)
 
-  // Saves the entered name and advances to the match-length selector.
+  // Pulled so the post-match handlers can branch on whether the player is
+  // currently in a multiplayer room. Disconnect is the clean exit path.
+  const { status: multiplayerStatus, opponentName, disconnect } = useMultiplayer()
+
+  // If the peer connection drops while we're inside any active in-match
+  // multiplayer flow, route the user back to mode selection so they're never
+  // stuck waiting on a peer that's gone. The lobby itself is excluded — it's
+  // normal for status to be 'idle' / 'hosting' / 'joining' there, that's the
+  // whole point of the screen. The lobby has its own Cancel + error UI for
+  // disconnects. The local exit paths (Leave match etc.) set the screen
+  // explicitly before disconnecting, so they don't trip this guard either.
+  useEffect(() => {
+    if (multiplayerStatus === 'connected') return
+    const inMatchMultiplayerScreens: ScreenName[] = [
+      'multiplayerMatchLength',
+      'multiplayerCoinToss',
+      'multiplayerBatOrBowl',
+      'multiplayerGameplay',
+    ]
+    if (inMatchMultiplayerScreens.includes(screen)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setScreen('modeSelect')
+    }
+  }, [multiplayerStatus, screen])
+
+  // Saves the entered name and advances to the mode selector.
   const handleNameSubmit = (name: string) => {
     setPlayerName(name)
-    setScreen('matchLength')
+    setScreen('modeSelect')
   }
 
-  // Saves the chosen number of balls per innings and advances to the coin toss.
+  // Branches into the singleplayer flow (match-length picker) or the
+  // multiplayer flow (lobby) based on the chosen mode.
+  const handleModeSelect = (mode: GameMode) => {
+    setScreen(mode === 'singleplayer' ? 'matchLength' : 'multiplayerLobby')
+  }
+
+  // Called by the lobby once the PeerJS connection has opened — advance to
+  // the multiplayer match-length picker.
+  const handleMultiplayerConnected = () => {
+    setScreen('multiplayerMatchLength')
+  }
+
+  // Singleplayer match-length picker callback — saves the chosen number of
+  // balls per innings and advances to the coin toss.
   const handleMatchLengthSelect = (count: BallsPerInnings) => {
     setBallsPerInnings(count)
     setScreen('coinToss')
+  }
+
+  // Multiplayer match-length sync callback — fires on the host (when they
+  // pick) and on the joiner (when the MATCH_LENGTH message arrives). Both
+  // sides advance to the multiplayer coin toss after this.
+  const handleMultiplayerMatchLengthSet = (count: BallsPerInnings) => {
+    setBallsPerInnings(count)
+    setScreen('multiplayerCoinToss')
+  }
+
+  // Multiplayer coin-toss completion — fires on both peers once the coin has
+  // landed (host computes the random result and broadcasts; joiner adopts
+  // it). Stores the outcome and advances to the bat/bowl picker.
+  const handleMultiplayerTossComplete = (outcome: TossOutcome) => {
+    setTossOutcome(outcome)
+    setScreen('multiplayerBatOrBowl')
+  }
+
+  // Multiplayer bat/bowl decision — fires on both peers once the toss winner
+  // has picked (the winner picks locally, the loser via the ROLE_CHOICE
+  // message). Stores the decision and advances to multiplayer gameplay.
+  const handleMultiplayerRoleSet = (decision: RoleDecision) => {
+    setRoleDecision(decision)
+    setScreen('multiplayerGameplay')
+  }
+
+  // User cancelled out of the multiplayer lobby — back to mode selection.
+  const handleLobbyCancel = () => {
+    setScreen('modeSelect')
   }
 
   // Stores the toss outcome and advances to the bat/bowl decision screen.
@@ -60,18 +134,24 @@ function App() {
     setScreen('matchResult')
   }
 
-  // Quick rematch: keep the name AND the chosen match length, drop straight
-  // back into the coin toss.
+  // Quick rematch. In singleplayer: keep the name + match length, drop
+  // straight into the coin toss. In multiplayer: both peers have confirmed
+  // the rematch (MatchResultScreen handshake), so we clear the per-match
+  // state and route back to the multiplayer coin toss with the same
+  // connection still alive.
   const handlePlayAgain = () => {
     setTossOutcome(null)
     setRoleDecision(null)
     setMatchResult(null)
-    setScreen('coinToss')
+    setScreen(multiplayerStatus === 'connected' ? 'multiplayerCoinToss' : 'coinToss')
   }
 
-  // Full reset: clear everything including the name and match length, back to
-  // the welcome screen.
+  // Full reset: clear everything including the name and tear down any
+  // active multiplayer connection. Returns to the welcome screen.
   const handleChangeName = () => {
+    if (multiplayerStatus === 'connected') {
+      disconnect()
+    }
     setPlayerName('')
     setBallsPerInnings(null)
     setTossOutcome(null)
@@ -89,11 +169,59 @@ function App() {
         {screen === 'playerName' && (
           <PlayerNameScreen key="player-name" onSubmit={handleNameSubmit} />
         )}
+        {screen === 'modeSelect' && (
+          <ModeSelectionScreen
+            key="mode-select"
+            playerName={playerName}
+            onSelect={handleModeSelect}
+          />
+        )}
         {screen === 'matchLength' && (
           <MatchLengthScreen
             key="match-length"
             playerName={playerName}
             onSelect={handleMatchLengthSelect}
+          />
+        )}
+        {screen === 'multiplayerLobby' && (
+          <MultiplayerLobbyScreen
+            key="multiplayer-lobby"
+            playerName={playerName}
+            onCancel={handleLobbyCancel}
+            onConnected={handleMultiplayerConnected}
+          />
+        )}
+        {screen === 'multiplayerMatchLength' && (
+          <MultiplayerMatchLengthScreen
+            key="multiplayer-match-length"
+            playerName={playerName}
+            onMatchLengthSet={handleMultiplayerMatchLengthSet}
+          />
+        )}
+        {screen === 'multiplayerCoinToss' && (
+          <MultiplayerCoinTossScreen
+            key="multiplayer-coin-toss"
+            playerName={playerName}
+            onComplete={handleMultiplayerTossComplete}
+          />
+        )}
+        {screen === 'multiplayerBatOrBowl' && tossOutcome && (
+          <MultiplayerBatOrBowlScreen
+            key="multiplayer-bat-or-bowl"
+            playerName={playerName}
+            tossOutcome={tossOutcome}
+            onRoleSet={handleMultiplayerRoleSet}
+          />
+        )}
+        {screen === 'multiplayerGameplay' && roleDecision && ballsPerInnings !== null && (
+          <GameplayScreen
+            key="multiplayer-gameplay"
+            playerName={playerName}
+            opponentName={opponentName ?? 'Opponent'}
+            firstBatter={roleDecision.firstInnings}
+            ballsPerInnings={ballsPerInnings}
+            mode="multiplayer"
+            onComplete={handleMatchComplete}
           />
         )}
         {screen === 'coinToss' && (
@@ -111,6 +239,7 @@ function App() {
           <GameplayScreen
             key="gameplay"
             playerName={playerName}
+            opponentName="Computer"
             firstBatter={roleDecision.firstInnings}
             ballsPerInnings={ballsPerInnings}
             onComplete={handleMatchComplete}

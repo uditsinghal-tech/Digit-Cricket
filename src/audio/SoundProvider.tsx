@@ -19,6 +19,9 @@ function readInitialMuted(): boolean {
 export function SoundProvider({ children }: { children: ReactNode }) {
   const [muted, setMuted] = useState<boolean>(readInitialMuted)
 
+  // Persists the mute flag to localStorage whenever it changes so the
+  // preference survives a page reload. Storage errors (private browsing,
+  // quota) are swallowed — losing the persisted value is non-critical.
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, String(muted))

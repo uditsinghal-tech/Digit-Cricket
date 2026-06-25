@@ -20,6 +20,9 @@ function readInitialMode(): StadiumMode {
 export function StadiumModeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<StadiumMode>(readInitialMode)
 
+  // Persists the current stadium mode to localStorage whenever it changes so
+  // the day/night preference survives a reload. Storage errors are swallowed
+  // since losing the persisted value is non-critical.
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, mode)

@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
 import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import { useMachine } from '@xstate/react'
@@ -11,19 +12,27 @@ import { cricketMachine, deriveWinner, type CricketContext } from '../game/machi
 import AnimatedFace, { type Mood } from '../components/AnimatedFace'
 import { useSounds } from '../audio/useSounds'
 import { useStadiumReaction } from '../stadium/useStadiumReaction'
+import { useMultiplayer } from '../multiplayer/useMultiplayer'
 import {
   BALL_NUMBERS,
   type BallEvent,
   type BallNumber,
   type BallsPerInnings,
+  type GameMode,
   type Innings,
   type MatchResult,
 } from '../game/types'
 
 type Props = {
   playerName: string
+  // What to label the opposing side as in every UI element. "Computer" in
+  // singleplayer; the live opponent's name in multiplayer.
+  opponentName: string
   firstBatter: Innings
   ballsPerInnings: BallsPerInnings
+  // Defaults to 'singleplayer'. In multiplayer the screen waits for both
+  // picks (own + opponent's via PeerJS) before dispatching to the machine.
+  mode?: GameMode
   onComplete: (result: MatchResult) => void
 }
 
@@ -44,10 +53,14 @@ function deriveMood(perspective: Innings, ctx: CricketContext, isRevealing: bool
 
 // The active gameplay screen. Drives the cricket state machine and renders
 // the scoreboard, picks area, outcome banner, and the 1-6 pick buttons.
+// In singleplayer the local pick goes straight to the machine; in
+// multiplayer it's exchanged with the opponent over PeerJS first.
 export default function GameplayScreen({
   playerName,
+  opponentName,
   firstBatter,
   ballsPerInnings,
+  mode = 'singleplayer',
   onComplete,
 }: Props) {
   const [state, send] = useMachine(cricketMachine, {
@@ -55,14 +68,58 @@ export default function GameplayScreen({
   })
   const { play } = useSounds()
   const { triggerReaction } = useStadiumReaction()
+  const { subscribe, send: sendNetwork } = useMultiplayer()
   const lastPlayedBallRef = useRef<BallEvent | null>(null)
 
   const ctx = state.context
+  const isMultiplayer = mode === 'multiplayer'
   const isAwaiting = state.matches('awaitingPick')
   const isRevealing = state.matches('revealing')
   const isComplete = state.matches('complete')
   const playerBatting = ctx.currentBatter === 'player'
 
+  // --- Multiplayer pick collection ---
+  // Both picks for the current ball live in a single state object so the
+  // ball-transition reset is one setState call (and one eslint-disable).
+  const [pendingPicks, setPendingPicks] = useState<{
+    local: BallNumber | null
+    opp: BallNumber | null
+  }>({ local: null, opp: null })
+
+  // Subscribes to inbound PICK messages in multiplayer mode and stashes
+  // the opponent's pick locally. Auto-unsubscribes on unmount.
+  useEffect(() => {
+    if (!isMultiplayer) return
+    return subscribe((msg) => {
+      if (msg.type === 'PICK') {
+        setPendingPicks((prev) => ({ ...prev, opp: msg.number }))
+      }
+    })
+  }, [isMultiplayer, subscribe])
+
+  // Once we have both picks AND the machine is ready for a new ball,
+  // dispatch a single PICK with both picks. The machine processes the ball
+  // and transitions to revealing.
+  useEffect(() => {
+    if (!isMultiplayer) return
+    if (pendingPicks.local === null || pendingPicks.opp === null) return
+    if (!isAwaiting) return
+    send({ type: 'PICK', number: pendingPicks.local, opponentPick: pendingPicks.opp })
+  }, [isMultiplayer, pendingPicks, isAwaiting, send])
+
+  // After a ball is processed the machine increments `ballsThisInnings` (or
+  // bumps `inningsNumber` at the innings switch). Either change marks the
+  // start of a new ball, so clear the accumulator. The setState in an effect
+  // is a legitimate sync of view state to machine state.
+  useEffect(() => {
+    if (!isMultiplayer) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPendingPicks({ local: null, opp: null })
+  }, [isMultiplayer, ctx.ballsThisInnings, ctx.inningsNumber])
+
+  // Match completion bubble-up. The machine transitions to `complete` after
+  // the final ball; we package the final context into a MatchResult and hand
+  // it to the parent so it can navigate to MatchResultScreen.
   useEffect(() => {
     if (!isComplete) return
     onComplete({
@@ -92,6 +149,19 @@ export default function GameplayScreen({
     return () => clearTimeout(timer)
   }, [isRevealing, ctx.lastBall, play, triggerReaction])
 
+  // Handles a 1-6 button press. In singleplayer the press dispatches PICK
+  // straight to the machine. In multiplayer it stashes the local pick and
+  // broadcasts it over the data channel; the machine waits for both picks.
+  const handlePick = (n: BallNumber) => {
+    if (isMultiplayer) {
+      if (pendingPicks.local !== null) return // already picked this ball; ignore
+      setPendingPicks((prev) => ({ ...prev, local: n }))
+      sendNetwork({ type: 'PICK', number: n })
+    } else {
+      send({ type: 'PICK', number: n })
+    }
+  }
+
   const playerPick =
     ctx.lastBall && (playerBatting ? ctx.lastBall.batterPick : ctx.lastBall.bowlerPick)
   const computerPick =
@@ -99,6 +169,16 @@ export default function GameplayScreen({
 
   const playerMood = deriveMood('player', ctx, isRevealing)
   const computerMood = deriveMood('computer', ctx, isRevealing)
+
+  // In multiplayer, disable the buttons once the local player has picked
+  // (waiting for the opponent). Singleplayer just uses the machine state.
+  const buttonsDisabled =
+    !isAwaiting || isComplete || (isMultiplayer && pendingPicks.local !== null)
+
+  // Multiplayer-only "waiting for opponent" hint shown under the pick buttons
+  // while the local player has picked but the opponent's pick hasn't arrived.
+  const waitingForOpponent =
+    isMultiplayer && isAwaiting && pendingPicks.local !== null && pendingPicks.opp === null
 
   return (
     <motion.div
@@ -114,14 +194,20 @@ export default function GameplayScreen({
           <Scoreboard
             ctx={ctx}
             playerName={playerName}
+            opponentName={opponentName}
             playerMood={playerMood}
             computerMood={computerMood}
           />
 
-          <RoleBanner playerBatting={playerBatting} playerName={playerName} />
+          <RoleBanner
+            playerBatting={playerBatting}
+            playerName={playerName}
+            opponentName={opponentName}
+          />
 
           <PicksDisplay
             playerName={playerName}
+            opponentName={opponentName}
             playerPick={isRevealing ? playerPick : null}
             computerPick={isRevealing ? computerPick : null}
             isOut={isRevealing ? ctx.lastBall?.isOut === true : false}
@@ -130,10 +216,19 @@ export default function GameplayScreen({
           <OutcomeBanner isRevealing={isRevealing} lastBall={ctx.lastBall} />
 
           <PickButtons
-            disabled={!isAwaiting || isComplete}
-            onPick={(n) => send({ type: 'PICK', number: n })}
+            disabled={buttonsDisabled}
+            onPick={handlePick}
             playerBatting={playerBatting}
           />
+
+          {waitingForOpponent && (
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
+              <CircularProgress size={16} color="secondary" />
+              <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                Waiting for {opponentName} to pick…
+              </Typography>
+            </Stack>
+          )}
         </Stack>
       </Box>
     </motion.div>
@@ -144,11 +239,13 @@ export default function GameplayScreen({
 function Scoreboard({
   ctx,
   playerName,
+  opponentName,
   playerMood,
   computerMood,
 }: {
   ctx: CricketContext
   playerName: string
+  opponentName: string
   playerMood: Mood
   computerMood: Mood
 }) {
@@ -181,7 +278,7 @@ function Scoreboard({
           vs
         </Typography>
         <PlayerCard
-          label="Computer"
+          label={opponentName}
           score={ctx.computerScore}
           mood={computerMood}
           accent="secondary"
@@ -247,32 +344,42 @@ function AnimatedScore({ score, accent }: { score: number; accent: 'primary' | '
 }
 
 // Two chips reminding the user who's batting and who's bowling this innings.
-function RoleBanner({ playerBatting, playerName }: { playerBatting: boolean; playerName: string }) {
+function RoleBanner({
+  playerBatting,
+  playerName,
+  opponentName,
+}: {
+  playerBatting: boolean
+  playerName: string
+  opponentName: string
+}) {
   return (
     <Stack direction="row" justifyContent="center" spacing={1} alignItems="center">
       <Chip
         size="small"
-        label={playerBatting ? `${playerName} batting` : 'Computer batting'}
+        label={playerBatting ? `${playerName} batting` : `${opponentName} batting`}
         color={playerBatting ? 'primary' : 'secondary'}
       />
       <Chip
         size="small"
         variant="outlined"
-        label={playerBatting ? 'Computer bowling' : `${playerName} bowling`}
+        label={playerBatting ? `${opponentName} bowling` : `${playerName} bowling`}
       />
     </Stack>
   )
 }
 
 // Side-by-side cards for the current ball's picks. Shows "?" while waiting
-// and reveals the player's number first, then the computer's, with a delay.
+// and reveals the player's number first, then the opponent's, with a delay.
 function PicksDisplay({
   playerName,
+  opponentName,
   playerPick,
   computerPick,
   isOut,
 }: {
   playerName: string
+  opponentName: string
   playerPick: BallNumber | null | undefined
   computerPick: BallNumber | null | undefined
   isOut: boolean
@@ -283,7 +390,13 @@ function PicksDisplay({
       <Typography variant="h6" sx={{ opacity: 0.4 }}>
         vs
       </Typography>
-      <PickCard label="Computer" pick={computerPick} accent="secondary" isOut={isOut} delay={0.6} />
+      <PickCard
+        label={opponentName}
+        pick={computerPick}
+        accent="secondary"
+        isOut={isOut}
+        delay={0.6}
+      />
     </Stack>
   )
 }

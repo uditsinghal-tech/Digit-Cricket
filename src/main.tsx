@@ -7,6 +7,7 @@ import theme from './theme.ts'
 import { SoundProvider } from './audio/SoundProvider'
 import { StadiumReactionProvider } from './stadium/StadiumReactionProvider'
 import { StadiumModeProvider } from './stadium/StadiumModeProvider'
+import { MultiplayerProvider } from './multiplayer/MultiplayerProvider'
 import './index.css'
 
 createRoot(document.getElementById('root')!).render(
@@ -16,7 +17,9 @@ createRoot(document.getElementById('root')!).render(
       <SoundProvider>
         <StadiumModeProvider>
           <StadiumReactionProvider>
-            <App />
+            <MultiplayerProvider>
+              <App />
+            </MultiplayerProvider>
           </StadiumReactionProvider>
         </StadiumModeProvider>
       </SoundProvider>

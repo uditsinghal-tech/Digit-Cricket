@@ -1,14 +1,16 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import { motion, type Variants } from 'framer-motion'
 import AnimatedFace, { type Mood } from '../components/AnimatedFace'
 import { useSounds } from '../audio/useSounds'
 import { useStadiumReaction } from '../stadium/useStadiumReaction'
+import { useMultiplayer } from '../multiplayer/useMultiplayer'
 import type { BallEvent, MatchResult } from '../game/types'
 
 type Props = {
@@ -27,14 +29,45 @@ const CONFETTI_COLORS = ['#38bdf8', '#a855f7', '#fbbf24', '#22c55e', '#f87171', 
 
 // Final screen. Reveals the result with a staged animation, summarises both
 // innings ball-by-ball, and offers Play Again (keep name) or Change Name (full reset).
+// In multiplayer, Play Again is a handshake — both peers must click before
+// the rematch actually starts.
 export default function MatchResultScreen({ result, onPlayAgain, onChangeName }: Props) {
   const { playerName, playerScore, computerScore, winner, firstBatter, events } = result
   const { play } = useSounds()
   const { triggerReaction } = useStadiumReaction()
+  const { status: multiplayerStatus, opponentName, send: sendNetwork, subscribe } = useMultiplayer()
+
+  const isMultiplayer = multiplayerStatus === 'connected'
 
   const playerWon = winner === 'player'
   const isTie = winner === 'tie'
   const margin = Math.abs(playerScore - computerScore)
+
+  // Multiplayer rematch handshake state. Both flags must be true before we
+  // advance the screen. Local goes true on click; opponent goes true on the
+  // incoming REMATCH_REQUEST message.
+  const [localRequested, setLocalRequested] = useState(false)
+  const [opponentRequested, setOpponentRequested] = useState(false)
+
+  // Subscribes to the opponent's REMATCH_REQUEST while we're connected.
+  // Unsubscribes on unmount / disconnect.
+  useEffect(() => {
+    if (!isMultiplayer) return
+    return subscribe((msg) => {
+      if (msg.type === 'REMATCH_REQUEST') {
+        setOpponentRequested(true)
+      }
+    })
+  }, [isMultiplayer, subscribe])
+
+  // Once both sides have requested a rematch, fire the parent callback to
+  // navigate back to the multiplayer coin toss.
+  useEffect(() => {
+    if (!isMultiplayer) return
+    if (localRequested && opponentRequested) {
+      onPlayAgain()
+    }
+  }, [isMultiplayer, localRequested, opponentRequested, onPlayAgain])
 
   // Play the celebration sound + fire the stadium visual reaction shortly
   // after mount so both land alongside the trophy spring-in. Tie matches stay
@@ -48,6 +81,18 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
     }, 350)
     return () => clearTimeout(timer)
   }, [isTie, playerWon, play, triggerReaction])
+
+  // Play Again click handler. In singleplayer the parent's callback fires
+  // immediately. In multiplayer we send REMATCH_REQUEST and wait for the
+  // opponent's request before advancing.
+  const handlePlayAgainClick = () => {
+    if (!isMultiplayer) {
+      onPlayAgain()
+      return
+    }
+    sendNetwork({ type: 'REMATCH_REQUEST' })
+    setLocalRequested(true)
+  }
 
   const headline = isTie ? "It's a tie!" : playerWon ? `${playerName} wins!` : 'Computer wins!'
   const subline = isTie
@@ -173,13 +218,22 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
               <Button
                 variant="contained"
                 size="large"
-                onClick={onPlayAgain}
+                onClick={handlePlayAgainClick}
+                disabled={isMultiplayer && localRequested}
                 sx={{ py: 1.25, fontSize: '1rem' }}
               >
-                Play again
+                {isMultiplayer && localRequested ? 'Waiting for opponent…' : 'Play again'}
               </Button>
+              {isMultiplayer && localRequested && (
+                <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
+                  <CircularProgress size={14} color="secondary" />
+                  <Typography variant="caption" sx={{ opacity: 0.75 }}>
+                    Waiting for {opponentName ?? 'opponent'} to confirm…
+                  </Typography>
+                </Stack>
+              )}
               <Button variant="text" color="secondary" onClick={onChangeName}>
-                Change name
+                {isMultiplayer ? 'Leave match' : 'Change name'}
               </Button>
             </Stack>
           </motion.div>

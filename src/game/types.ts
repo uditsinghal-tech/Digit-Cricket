@@ -1,10 +1,19 @@
 export type ScreenName =
   | 'playerName'
+  | 'modeSelect'
   | 'matchLength'
+  | 'multiplayerLobby'
+  | 'multiplayerMatchLength'
+  | 'multiplayerCoinToss'
+  | 'multiplayerBatOrBowl'
+  | 'multiplayerGameplay'
   | 'coinToss'
   | 'batOrBowl'
   | 'gameplay'
   | 'matchResult'
+
+// Singleplayer (vs computer) or multiplayer (vs friend over WebRTC).
+export type GameMode = 'singleplayer' | 'multiplayer'
 
 export type Side = 'heads' | 'tails'
 

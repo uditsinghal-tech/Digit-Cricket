@@ -45,6 +45,9 @@ export default function BatOrBowlScreen({ playerName, tossOutcome, onComplete }:
   const [phase, setPhase] = useState<Phase>(playerWon ? 'choosing' : 'computing')
   const [computerRole, setComputerRole] = useState<Role | null>(null)
 
+  // Computer-only "thinking" delay. When the computer won the toss we sit in
+  // the 'computing' phase for COMPUTE_DELAY_MS so the spinner reads as
+  // deliberation, then roll the random role and reveal it.
   useEffect(() => {
     if (phase !== 'computing') return
     const timer = setTimeout(() => {

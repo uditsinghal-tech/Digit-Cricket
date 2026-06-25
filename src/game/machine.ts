@@ -28,7 +28,10 @@ type CricketInput = {
   ballsPerInnings: BallsPerInnings
 }
 
-type CricketEvent = { type: 'PICK'; number: BallNumber }
+// The PICK event carries the local player's pick. In multiplayer the view
+// also supplies the opponent's pick (received over the network); in
+// singleplayer it's omitted and processBall rolls a random one instead.
+type CricketEvent = { type: 'PICK'; number: BallNumber; opponentPick?: BallNumber }
 
 // How long the machine lingers in the `revealing` state so the view can
 // stagger the player pick, computer pick, and outcome chip on screen.
@@ -59,7 +62,9 @@ export const cricketMachine = setup({
     // a wicket, adds runs to the batting side, and appends the ball event.
     processBall: assign(({ context, event }) => {
       const playerPick = event.number
-      const computerPick = randomBallNumber()
+      // Multiplayer supplies the opponent's pick via the event; singleplayer
+      // leaves it undefined and we roll a random 1-6 here instead.
+      const computerPick = event.opponentPick ?? randomBallNumber()
 
       const playerIsBatting = context.currentBatter === 'player'
       const batterPick = playerIsBatting ? playerPick : computerPick

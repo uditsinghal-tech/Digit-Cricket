@@ -19,13 +19,13 @@
     "@mui/material": "^6.5.0",
     "@xstate/react": "^6.1.0",
     "framer-motion": "^12.41.0",
+    "peerjs": "^1.5.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "xstate": "^5.32.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^24.13.2",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.0.2",

@@ -28,6 +28,8 @@ export function StadiumReactionProvider({ children }: { children: ReactNode }) {
     }, REACTION_DURATION_MS)
   }, [])
 
+  // Unmount cleanup — clears any pending auto-clear timer so we don't run a
+  // setReaction call against an unmounted provider during teardown.
   useEffect(() => {
     return () => {
       if (timerRef.current !== null) {
