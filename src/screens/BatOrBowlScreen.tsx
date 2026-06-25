@@ -91,7 +91,7 @@ export default function BatOrBowlScreen({ playerName, tossOutcome, onComplete }:
         <Stack spacing={4} alignItems="center">
           <Stack spacing={1} alignItems="center">
             <Typography variant="h4" component="h1" className="title">
-              {playerWon ? `You won the toss, ${playerName}!` : 'Computer won the toss'}
+              {playerWon ? `You won the toss, ${playerName}!` : 'DigitCricket won the toss'}
             </Typography>
             <Typography variant="body1" sx={{ opacity: 0.75 }}>
               {playerWon
@@ -128,7 +128,7 @@ export default function BatOrBowlScreen({ playerName, tossOutcome, onComplete }:
                 <Stack spacing={2} alignItems="center">
                   <CircularProgress color="secondary" />
                   <Typography variant="body2" sx={{ opacity: 0.7 }}>
-                    Computer is thinking…
+                    DigitCricket is thinking…
                   </Typography>
                 </Stack>
               </motion.div>
@@ -151,7 +151,7 @@ export default function BatOrBowlScreen({ playerName, tossOutcome, onComplete }:
                       <SportsBaseballIcon sx={{ fontSize: 36, color: 'secondary.light' }} />
                     )}
                     <Typography variant="h6" sx={{ color: 'secondary.light' }}>
-                      Computer chose to {computerRole} first
+                      DigitCricket chose to {computerRole} first
                     </Typography>
                   </Stack>
                   <Typography variant="body2" sx={{ opacity: 0.75 }}>

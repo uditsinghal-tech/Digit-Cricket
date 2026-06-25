@@ -95,7 +95,7 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
     setLocalRequested(true)
   }
 
-  const headline = isTie ? "It's a tie!" : playerWon ? `${playerName} wins!` : 'Computer wins!'
+  const headline = isTie ? "It's a tie!" : playerWon ? `${playerName} wins!` : 'DigitCricket wins!'
   const subline = isTie
     ? `Both finished on ${playerScore}`
     : `by ${margin} run${margin === 1 ? '' : 's'}`
@@ -111,8 +111,8 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
   const secondBatterInnings: (1 | 2 | 3 | 4)[] = totalInnings === 4 ? [2, 4] : [2]
   const inningsOneEvents = events.filter((e) => firstBatterInnings.includes(e.innings))
   const inningsTwoEvents = events.filter((e) => secondBatterInnings.includes(e.innings))
-  const firstBatterLabel = firstBatter === 'player' ? playerName : 'Computer'
-  const secondBatterLabel = firstBatter === 'player' ? 'Computer' : playerName
+  const firstBatterLabel = firstBatter === 'player' ? playerName : 'DigitCricket'
+  const secondBatterLabel = firstBatter === 'player' ? 'DigitCricket' : playerName
   const firstInningsTotal = firstBatter === 'player' ? playerScore : computerScore
   const secondInningsTotal = firstBatter === 'player' ? computerScore : playerScore
 
@@ -192,7 +192,7 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
                 vs
               </Typography>
               <PlayerResult
-                name="Computer"
+                name="DigitCricket"
                 score={computerScore}
                 mood={computerMood}
                 accent="secondary"

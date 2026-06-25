@@ -180,7 +180,7 @@ export default function CoinTossScreen({ playerName, onComplete }: Props) {
                   >
                     {winner === 'player'
                       ? `You called ${userChoice} — you won the toss!`
-                      : `You called ${userChoice}. Computer wins the toss.`}
+                      : `You called ${userChoice}. DigitCricket wins the toss.`}
                   </Typography>
                 </Stack>
               </motion.div>

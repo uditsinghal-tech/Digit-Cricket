@@ -203,7 +203,7 @@ function MenuView({
     <Stack spacing={4} alignItems="center">
       <Stack spacing={1} alignItems="center">
         <Typography variant="h4" component="h1" className="title">
-          Play vs Friend
+          Play against Friend
         </Typography>
         <Typography variant="body1" sx={{ opacity: 0.75 }}>
           Create a room and share the code, or join one with a friend's code.

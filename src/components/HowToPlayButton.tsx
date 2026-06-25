@@ -106,7 +106,7 @@ export default function HowToPlayButton() {
             <Section title="Singleplayer vs Multiplayer">
               <Box component="ul" sx={{ pl: 2.5, my: 0.5 }}>
                 <li>
-                  <b>Vs Computer</b> — the AI picks instantly. Match length is
+                  <b>Vs DigitCricket</b> — the AI picks instantly. Match length is
                   picked from the singleplayer screen.
                 </li>
                 <li>

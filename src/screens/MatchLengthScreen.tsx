@@ -44,7 +44,7 @@ export default function MatchLengthScreen({ playerName, onSelect, onBack }: Prop
               Match length
             </Typography>
             <Typography variant="body1" sx={{ opacity: 0.75 }}>
-              Hi {playerName} — pick how many balls per innings.
+              Hi {playerName}, pick how many balls per innings.
             </Typography>
           </Stack>
 

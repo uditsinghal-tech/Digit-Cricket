@@ -2,8 +2,13 @@ import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import { AnimatePresence } from 'framer-motion'
 import PlayerNameScreen from './screens/PlayerNameScreen'
+import StartChoiceScreen, { type StartChoice } from './screens/StartChoiceScreen'
 import ModeSelectionScreen from './screens/ModeSelectionScreen'
 import MatchLengthScreen from './screens/MatchLengthScreen'
+import QuizDifficultyScreen from './screens/QuizDifficultyScreen'
+import QuizScreen, { type QuizResult } from './screens/QuizScreen'
+import QuizResultScreen from './screens/QuizResultScreen'
+import type { QuizDifficultyChoice } from './quiz/questions'
 import MultiplayerLobbyScreen from './screens/MultiplayerLobbyScreen'
 import MultiplayerCoinTossScreen from './screens/MultiplayerCoinTossScreen'
 import MultiplayerBatOrBowlScreen from './screens/MultiplayerBatOrBowlScreen'
@@ -43,6 +48,13 @@ function App() {
   const [tossOutcome, setTossOutcome] = useState<TossOutcome | null>(null)
   const [roleDecision, setRoleDecision] = useState<RoleDecision | null>(null)
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null)
+  // The latest finished quiz session. Reset on a "Try Again" so a fresh
+  // 10-question sample is sampled.
+  const [quizResult, setQuizResult] = useState<QuizResult | null>(null)
+  // The difficulty band the player picked for the current quiz run. Held
+  // so "Try Again" re-uses the same band without bouncing them back to the
+  // difficulty picker. Cleared when the user goes Home.
+  const [quizDifficulty, setQuizDifficulty] = useState<QuizDifficultyChoice>('mixed')
 
   // Pulled so the post-match handlers can branch on whether the player is
   // currently in a multiplayer room. `subscribe` is used to receive the
@@ -82,10 +94,43 @@ function App() {
     }
   }, [multiplayerStatus, screen])
 
-  // Saves the entered name and advances to the mode selector.
+  // Saves the entered name and advances to the new start-choice screen
+  // (Play Cricket / Quiz). The cricket flow continues from there.
   const handleNameSubmit = (name: string) => {
     setPlayerName(name)
-    setScreen('modeSelect')
+    setScreen('startChoice')
+  }
+
+  // Branches between the cricket match flow and the quiz mode. The quiz
+  // path now goes through the difficulty picker first.
+  const handleStartChoice = (choice: StartChoice) => {
+    if (choice === 'play') {
+      setScreen('modeSelect')
+    } else {
+      setQuizResult(null)
+      setScreen('quizDifficulty')
+    }
+  }
+
+  // Difficulty picked — stash it and start the quiz.
+  const handleQuizDifficulty = (difficulty: QuizDifficultyChoice) => {
+    setQuizDifficulty(difficulty)
+    setQuizResult(null)
+    setScreen('quiz')
+  }
+
+  // Quiz finished — stash the 10-question summary and route to the result
+  // screen. The user can then Try Again or go Home.
+  const handleQuizFinish = (result: QuizResult) => {
+    setQuizResult(result)
+    setScreen('quizResult')
+  }
+
+  // "Try Again" from the result screen: clear the previous result and
+  // re-mount QuizScreen so it samples a fresh 10 questions.
+  const handleQuizTryAgain = () => {
+    setQuizResult(null)
+    setScreen('quiz')
   }
 
   // Branches into the singleplayer flow (match-length picker) or the
@@ -221,12 +266,45 @@ function App() {
         {screen === 'playerName' && (
           <PlayerNameScreen key="player-name" onSubmit={handleNameSubmit} />
         )}
+        {screen === 'startChoice' && (
+          <StartChoiceScreen
+            key="start-choice"
+            playerName={playerName}
+            onSelect={handleStartChoice}
+            onBack={() => setScreen('playerName')}
+          />
+        )}
         {screen === 'modeSelect' && (
           <ModeSelectionScreen
             key="mode-select"
             playerName={playerName}
             onSelect={handleModeSelect}
-            onBack={() => setScreen('playerName')}
+            onBack={() => setScreen('startChoice')}
+          />
+        )}
+        {screen === 'quizDifficulty' && (
+          <QuizDifficultyScreen
+            key="quiz-difficulty"
+            playerName={playerName}
+            onSelect={handleQuizDifficulty}
+            onBack={() => setScreen('startChoice')}
+          />
+        )}
+        {screen === 'quiz' && (
+          <QuizScreen
+            key={`quiz-${quizDifficulty}`}
+            playerName={playerName}
+            difficulty={quizDifficulty}
+            onFinish={handleQuizFinish}
+            onBack={() => setScreen('quizDifficulty')}
+          />
+        )}
+        {screen === 'quizResult' && quizResult && (
+          <QuizResultScreen
+            key="quiz-result"
+            result={quizResult}
+            onTryAgain={handleQuizTryAgain}
+            onHome={() => setScreen('startChoice')}
           />
         )}
         {screen === 'matchLength' && (
@@ -286,7 +364,7 @@ function App() {
           <GameplayScreen
             key="gameplay"
             playerName={playerName}
-            opponentName="Computer"
+            opponentName="DigitCricket"
             firstBatter={roleDecision.firstInnings}
             ballsPerInnings={ballsPerInnings}
             totalInnings={totalInnings}
