@@ -48,12 +48,8 @@ const EXPIRED_AUTO_REDIRECT_MS = 4000
 // notices via the multiplayer status and advances the screen.
 export default function MultiplayerLobbyScreen({ playerName, onCancel, onConnected }: Props) {
   const { status, roomCode, errorMessage, host, join, disconnect, send } = useMultiplayer()
-  const [view, setView] = useState<LobbyView>('hostMatchLength')
+  const [view, setView] = useState<LobbyView>('menu')
   const [codeInput, setCodeInput] = useState('')
-  // Length the user picked in the length-first picker. Held locally so the
-  // menu can show, and only promoted to `hostMatchLength` once the user
-  // actually clicks Create Room.
-  const [matchLength, setMatchLength] = useState<BallsPerInnings | null>(null)
   // Host's match-length pick, captured BEFORE the room code is generated.
   // Stays null on the joiner side. Cached locally so the connect-time effect
   // can broadcast MATCH_LENGTH right after HELLO without an extra screen.
@@ -89,21 +85,16 @@ export default function MultiplayerLobbyScreen({ playerName, onCancel, onConnect
     onConnected(hostMatchLength)
   }, [status, send, playerName, onConnected, hostMatchLength])
 
-  // Length picker → menu. Cache the choice locally; we don't promote it to
-  // `hostMatchLength` until the user actually clicks Create Room (joiners
-  // shouldn't broadcast a MATCH_LENGTH).
-  const handleHostMatchLengthPick = (count: BallsPerInnings) => {
-    setMatchLength(count)
-    setView('menu')
+  // Menu → match-length picker. The PeerJS peer is NOT created yet — we wait
+  // until the host has actually committed to a match length.
+  const handleHostStart = () => {
+    setView('hostMatchLength')
   }
 
-  // Menu → hosting. Now that the user has committed to a match length AND
-  // chosen Create, promote the cached length to `hostMatchLength` (drives the
-  // connect-time MATCH_LENGTH broadcast + the hosting view caption) and kick
-  // off the peer (which generates the room code).
-  const handleHostStart = () => {
-    if (matchLength === null) return
-    setHostMatchLength(matchLength)
+  // Host picked 6 or 12. Cache the choice, switch to the hosting view, and
+  // finally kick off the peer (which generates the room code).
+  const handleHostMatchLengthPick = (count: BallsPerInnings) => {
+    setHostMatchLength(count)
     setView('hosting')
     void host()
   }
@@ -150,15 +141,14 @@ export default function MultiplayerLobbyScreen({ playerName, onCancel, onConnect
       style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
     >
       <Box sx={{ width: '100%', maxWidth: 480, px: 3, py: 6, textAlign: 'center' }}>
-        {view === 'hostMatchLength' && (
-          <HostMatchLengthView onPick={handleHostMatchLengthPick} onBack={onCancel} />
+        {view === 'menu' && (
+          <MenuView onHost={handleHostStart} onJoinStart={handleJoinStart} onBack={onCancel} />
         )}
 
-        {view === 'menu' && (
-          <MenuView
-            onHost={handleHostStart}
-            onJoinStart={handleJoinStart}
-            onBack={() => setView('hostMatchLength')}
+        {view === 'hostMatchLength' && (
+          <HostMatchLengthView
+            onPick={handleHostMatchLengthPick}
+            onBack={() => setView('menu')}
           />
         )}
 
