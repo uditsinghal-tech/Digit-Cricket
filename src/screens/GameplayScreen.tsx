@@ -6,15 +6,21 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import SportsCricketIcon from '@mui/icons-material/SportsCricket'
 import SportsBaseballIcon from '@mui/icons-material/SportsBaseball'
+import CallIcon from '@mui/icons-material/Call'
+import CallEndIcon from '@mui/icons-material/CallEnd'
+import MicIcon from '@mui/icons-material/Mic'
+import MicOffIcon from '@mui/icons-material/MicOff'
 import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import { useMachine } from '@xstate/react'
 import { cricketMachine, deriveWinner, type CricketContext } from '../game/machine'
 import AnimatedFace, { type Mood } from '../components/AnimatedFace'
 import { useSounds } from '../audio/useSounds'
 import { useStadiumReaction } from '../stadium/useStadiumReaction'
-import { useMultiplayer } from '../multiplayer/useMultiplayer'
+import { useMultiplayer, type VoiceCallStatus } from '../multiplayer/useMultiplayer'
 import {
   BALL_NUMBERS,
   type BallEvent,
@@ -90,7 +96,19 @@ export default function GameplayScreen({
   })
   const { play } = useSounds()
   const { triggerReaction } = useStadiumReaction()
-  const { subscribe, send: sendNetwork } = useMultiplayer()
+  const {
+    subscribe,
+    send: sendNetwork,
+    voiceStatus,
+    voiceSupported,
+    voiceError,
+    isMuted,
+    startCall,
+    acceptCall,
+    rejectCall,
+    endCall,
+    toggleMute,
+  } = useMultiplayer()
   const lastPlayedBallRef = useRef<BallEvent | null>(null)
 
   const ctx = state.context
@@ -138,6 +156,19 @@ export default function GameplayScreen({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPendingPicks({ local: null, opp: null })
   }, [isMultiplayer, ctx.ballsThisInnings, ctx.inningsNumber])
+
+  // The instant the match finishes, drop any live voice call. The mic
+  // stops, the MediaConnection closes, and the remote side sees the
+  // hang-up before the result screen even mounts. Also runs on unmount so
+  // a back-out mid-match doesn't leave a hot mic dangling.
+  useEffect(() => {
+    if (isComplete) {
+      endCall()
+    }
+    return () => {
+      endCall()
+    }
+  }, [isComplete, endCall])
 
   // Match completion bubble-up. The machine transitions to `complete` after
   // the final ball; we package the final context into a MatchResult and hand
@@ -331,6 +362,21 @@ export default function GameplayScreen({
                 Waiting for {opponentName} to pick…
               </Typography>
             </Stack>
+          )}
+
+          {isMultiplayer && (
+            <VoiceCallPanel
+              opponentName={opponentName}
+              voiceStatus={voiceStatus}
+              voiceSupported={voiceSupported}
+              voiceError={voiceError}
+              isMuted={isMuted}
+              onStart={() => void startCall()}
+              onAccept={() => void acceptCall()}
+              onReject={rejectCall}
+              onEnd={endCall}
+              onToggleMute={toggleMute}
+            />
           )}
         </Stack>
       </Box>
@@ -875,5 +921,140 @@ function BallTimer({ secondsLeft }: { secondsLeft: number }) {
         {secondsLeft}
       </Typography>
     </motion.div>
+  )
+}
+
+// Voice-call control row. Shown only in multiplayer matches, lives at the
+// bottom of the gameplay column. Renders four mutually-exclusive states:
+//   - idle      → a single "Call" button (or a "voice not supported" hint
+//                 when getUserMedia is unavailable in this browser/origin).
+//   - connecting→ a spinner + "Calling…" / "Connecting…" hint with End.
+//   - incoming  → a clear "X is calling" line with Accept / Decline.
+//   - active    → mute toggle + End call, with a small "On call" status.
+// The component takes everything it needs as props so it stays a pure
+// view — no direct multiplayer-context coupling.
+function VoiceCallPanel({
+  opponentName,
+  voiceStatus,
+  voiceSupported,
+  voiceError,
+  isMuted,
+  onStart,
+  onAccept,
+  onReject,
+  onEnd,
+  onToggleMute,
+}: {
+  opponentName: string
+  voiceStatus: VoiceCallStatus
+  voiceSupported: boolean
+  voiceError: string | null
+  isMuted: boolean
+  onStart: () => void
+  onAccept: () => void
+  onReject: () => void
+  onEnd: () => void
+  onToggleMute: () => void
+}) {
+  // Voice is unavailable on insecure origins (http://) and browsers
+  // without getUserMedia. Hide everything in that case rather than
+  // teasing a button that would fail on click.
+  if (!voiceSupported) return null
+
+  return (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      justifyContent="center"
+      sx={{
+        mt: 0.5,
+        p: 0.75,
+        borderRadius: 2,
+        border: '1px solid rgba(148, 163, 184, 0.25)',
+        background: 'rgba(15, 23, 42, 0.45)',
+      }}
+    >
+      {voiceStatus === 'idle' && (
+        <>
+          <Tooltip title={`Start voice call with ${opponentName}`} arrow>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<CallIcon />}
+              onClick={onStart}
+              className="purple-accent"
+            >
+              Call {opponentName}
+            </Button>
+          </Tooltip>
+          {voiceError && (
+            <Typography variant="caption" color="error" sx={{ ml: 1 }}>
+              {voiceError}
+            </Typography>
+          )}
+        </>
+      )}
+
+      {voiceStatus === 'connecting' && (
+        <>
+          <CircularProgress size={16} color="secondary" />
+          <Typography variant="caption" sx={{ opacity: 0.85 }}>
+            Connecting voice…
+          </Typography>
+          <Button size="small" color="error" onClick={onEnd} startIcon={<CallEndIcon />}>
+            Cancel
+          </Button>
+        </>
+      )}
+
+      {voiceStatus === 'incoming' && (
+        <>
+          <Typography variant="caption" sx={{ opacity: 0.9 }}>
+            📞 {opponentName} is calling
+          </Typography>
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            startIcon={<CallIcon />}
+            onClick={onAccept}
+          >
+            Accept
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            startIcon={<CallEndIcon />}
+            onClick={onReject}
+          >
+            Decline
+          </Button>
+        </>
+      )}
+
+      {voiceStatus === 'active' && (
+        <>
+          <Typography variant="caption" sx={{ opacity: 0.85 }}>
+            🔴 On call with {opponentName}
+          </Typography>
+          <Tooltip title={isMuted ? 'Unmute' : 'Mute'} arrow>
+            <IconButton size="small" onClick={onToggleMute}>
+              {isMuted ? <MicOffIcon fontSize="small" /> : <MicIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+          <Button
+            size="small"
+            variant="contained"
+            color="error"
+            startIcon={<CallEndIcon />}
+            onClick={onEnd}
+          >
+            End call
+          </Button>
+        </>
+      )}
+    </Stack>
   )
 }

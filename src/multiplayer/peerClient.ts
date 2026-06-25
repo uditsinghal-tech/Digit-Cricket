@@ -1,4 +1,4 @@
-import { Peer, type DataConnection } from 'peerjs'
+import { Peer, type DataConnection, type MediaConnection } from 'peerjs'
 import type { NetworkMessage } from './messages'
 
 // Length of the shareable room code. 6 characters from a 31-symbol alphabet
@@ -30,6 +30,12 @@ type Callbacks = {
   onConnected: () => void
   onDisconnected: () => void
   onError: (message: string) => void
+  // Voice-call callbacks. The React provider uses these to drive a small
+  // call UI (incoming-call notification, remote-audio playback, end-call
+  // teardown). The data layer never touches the DOM directly.
+  onIncomingCall: () => void
+  onRemoteStream: (stream: MediaStream) => void
+  onCallEnded: () => void
 }
 
 // Thin wrapper around PeerJS that exposes a host/join/send/destroy surface
@@ -39,6 +45,15 @@ export class PeerClient {
   private peer: Peer | null = null
   private conn: DataConnection | null = null
   private callbacks: Callbacks
+  // The MediaConnection for an inbound call waiting to be accepted. Held
+  // here so the React side can pop a "X is calling you" UI and decide
+  // whether to grab the mic and answer.
+  private pendingIncomingCall: MediaConnection | null = null
+  // The MediaConnection for the currently-active two-way audio call.
+  private activeCall: MediaConnection | null = null
+  // The local mic stream once we've grabbed it. Held so we can stop its
+  // tracks on hang-up (which kills the OS-level mic-active indicator).
+  private localStream: MediaStream | null = null
 
   constructor(callbacks: Callbacks) {
     this.callbacks = callbacks
@@ -69,6 +84,7 @@ export class PeerClient {
         console.log('[multiplayer] host: incoming connection from', conn.peer)
         this.attachConnection(conn)
       })
+      this.attachCallListener(this.peer!)
       this.peer!.on('error', (err) => {
         console.error('[multiplayer] host: PeerJS error', err)
         window.clearTimeout(failTimer)
@@ -125,6 +141,7 @@ export class PeerClient {
         window.clearTimeout(brokerTimer)
         const conn = this.peer!.connect(roomCode, { reliable: true })
         this.attachConnection(conn)
+        this.attachCallListener(this.peer!)
 
         // Inner timer: from peer.connect() until conn.on('open') fires.
         // Expires if the host code is wrong or the host isn't reachable.
@@ -153,6 +170,10 @@ export class PeerClient {
   // Destroys the current peer + connection if any. Used at the start of
   // host() / join() so a retry after an error starts from a clean slate.
   private cleanupPeer(): void {
+    // Any active voice call goes with the peer — stop its tracks, close
+    // the MediaConnection, and clear local refs so we don't leak a hot
+    // microphone after the peer is destroyed.
+    this.endCall()
     try {
       this.conn?.close()
     } catch {
@@ -165,6 +186,118 @@ export class PeerClient {
     }
     this.conn = null
     this.peer = null
+  }
+
+  // Subscribes once-per-peer to inbound voice calls from the other side.
+  // We don't auto-answer — we stash the MediaConnection and notify the
+  // React layer so a user-facing UI can confirm before granting mic
+  // access. That keeps the mic-permission prompt tied to a real user
+  // click, never a silent auto-grant.
+  private attachCallListener(peer: Peer): void {
+    peer.on('call', (call) => {
+      console.log('[multiplayer] incoming voice call from', call.peer)
+      this.pendingIncomingCall = call
+      this.callbacks.onIncomingCall()
+    })
+  }
+
+  // Wires the active MediaConnection's events into our callbacks. Used by
+  // both the caller side (after peer.call) and the callee side (after
+  // call.answer) so the remote-stream / close / error handling is the
+  // same in both directions.
+  private attachCall(call: MediaConnection): void {
+    this.activeCall = call
+    call.on('stream', (remote) => {
+      console.log('[multiplayer] voice: remote stream received')
+      this.callbacks.onRemoteStream(remote)
+    })
+    call.on('close', () => {
+      console.log('[multiplayer] voice: call closed by peer')
+      this.endCall()
+    })
+    call.on('error', (err) => {
+      console.error('[multiplayer] voice: call error', err)
+      this.callbacks.onError(this.describeError(err))
+      this.endCall()
+    })
+  }
+
+  // Caller path. Grabs the local mic (browser prompts the user if needed),
+  // dials the other peer with the resulting MediaStream, and wires up the
+  // remote-audio handler. Throws if the user denies mic permission or
+  // the data connection isn't open yet (no peer to call).
+  async startCall(): Promise<void> {
+    if (this.activeCall) return
+    const otherId = this.conn?.peer
+    if (!this.peer || !otherId) {
+      throw new Error('Not connected to a peer yet — cannot start a call.')
+    }
+    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const call = this.peer.call(otherId, this.localStream)
+    this.attachCall(call)
+  }
+
+  // Callee path. Grabs the local mic and answers the pending inbound call
+  // with the resulting stream so the audio is two-way. Mic permission is
+  // requested HERE — bound to the user's Accept click, never auto-granted.
+  async acceptCall(): Promise<void> {
+    if (!this.pendingIncomingCall) return
+    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    this.pendingIncomingCall.answer(this.localStream)
+    this.attachCall(this.pendingIncomingCall)
+    this.pendingIncomingCall = null
+  }
+
+  // Callee path: refuse an incoming call before the mic prompt. Closes
+  // the MediaConnection so the caller side hears a hang-up immediately.
+  rejectCall(): void {
+    try {
+      this.pendingIncomingCall?.close()
+    } catch {
+      // ignore
+    }
+    this.pendingIncomingCall = null
+    this.callbacks.onCallEnded()
+  }
+
+  // Hang up the active call from either side. Stops the local mic tracks
+  // so the browser's mic-active indicator clears, closes the
+  // MediaConnection, and notifies the React layer to drop UI state.
+  endCall(): void {
+    try {
+      this.activeCall?.close()
+    } catch {
+      // ignore
+    }
+    this.activeCall = null
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((t) => t.stop())
+      this.localStream = null
+    }
+    if (this.pendingIncomingCall) {
+      try {
+        this.pendingIncomingCall.close()
+      } catch {
+        // ignore
+      }
+      this.pendingIncomingCall = null
+    }
+    this.callbacks.onCallEnded()
+  }
+
+  // Enables / disables the local audio track in place. Cheaper than
+  // re-acquiring the mic, and keeps the call connected so the remote
+  // side sees a clean mute, not a hang-up.
+  setMuted(muted: boolean): void {
+    this.localStream?.getAudioTracks().forEach((t) => {
+      t.enabled = !muted
+    })
+  }
+
+  // True iff a voice call is live. Used by the React layer to gate the
+  // "End call" button without having to expose the MediaConnection itself.
+  isCallActive(): boolean {
+    return this.activeCall !== null
   }
 
   // Wires up the DataConnection's events to our callbacks. The connection
