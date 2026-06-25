@@ -4,12 +4,14 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
 import GroupsIcon from '@mui/icons-material/Groups'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { motion, type Variants } from 'framer-motion'
 import type { GameMode } from '../game/types'
 
 type Props = {
   playerName: string
   onSelect: (mode: GameMode) => void
+  onBack: () => void
 }
 
 const containerVariants = {
@@ -21,7 +23,7 @@ const containerVariants = {
 // Lets the player choose between singleplayer (vs computer) and multiplayer
 // (vs a friend over WebRTC/PeerJS). Sits between PlayerNameScreen and either
 // MatchLengthScreen (singleplayer) or MultiplayerLobbyScreen (multiplayer).
-export default function ModeSelectionScreen({ playerName, onSelect }: Props) {
+export default function ModeSelectionScreen({ playerName, onSelect, onBack }: Props) {
   return (
     <motion.div
       key="mode-selection-screen"
@@ -58,6 +60,10 @@ export default function ModeSelectionScreen({ playerName, onSelect }: Props) {
               onClick={onSelect}
             />
           </Stack>
+
+          <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>
+            Back to home page
+          </Button>
         </Stack>
       </Box>
     </motion.div>

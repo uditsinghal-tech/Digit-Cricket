@@ -2,12 +2,14 @@ import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { motion, type Variants } from 'framer-motion'
 import type { BallsPerInnings } from '../game/types'
 
 type Props = {
   playerName: string
   onSelect: (count: BallsPerInnings) => void
+  onBack: () => void
 }
 
 const containerVariants = {
@@ -18,7 +20,7 @@ const containerVariants = {
 
 // Sits between PlayerNameScreen and CoinTossScreen. Lets the player pick a
 // quick 6-ball match or a longer 12-ball one before the toss begins.
-export default function MatchLengthScreen({ playerName, onSelect }: Props) {
+export default function MatchLengthScreen({ playerName, onSelect, onBack }: Props) {
   return (
     <motion.div
       key="match-length-screen"
@@ -43,6 +45,10 @@ export default function MatchLengthScreen({ playerName, onSelect }: Props) {
             <LengthButton count={6} label="6 Ball Game" sub="1 over" onClick={onSelect} />
             <LengthButton count={12} label="12 Ball Game" sub="2 overs" onClick={onSelect} />
           </Stack>
+
+          <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>
+            Back to mode selection
+          </Button>
         </Stack>
       </Box>
     </motion.div>

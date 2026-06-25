@@ -218,6 +218,7 @@ function App() {
             key="mode-select"
             playerName={playerName}
             onSelect={handleModeSelect}
+            onBack={() => setScreen('playerName')}
           />
         )}
         {screen === 'matchLength' && (
@@ -225,6 +226,7 @@ function App() {
             key="match-length"
             playerName={playerName}
             onSelect={handleMatchLengthSelect}
+            onBack={() => setScreen('modeSelect')}
           />
         )}
         {screen === 'multiplayerLobby' && (
