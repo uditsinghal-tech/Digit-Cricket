@@ -26,3 +26,10 @@ dist-ssr
 # Local-only bug log (kept out of the public repo).
 bugfix.md
 timer.md
+
+# Ignore version notes
+version1.md
+version2.md
+version3.md
+version4.md
+version5.md

@@ -14,6 +14,7 @@ import MatchResultScreen from './screens/MatchResultScreen'
 import StadiumBackground from './components/StadiumBackground'
 import MuteToggle from './components/MuteToggle'
 import DayNightToggle from './components/DayNightToggle'
+import HowToPlayButton from './components/HowToPlayButton'
 import { useMultiplayer } from './multiplayer/useMultiplayer'
 import type { NetworkMessage } from './multiplayer/messages'
 import type {
@@ -174,8 +175,39 @@ function App() {
   return (
     <Box className="app-shell">
       <StadiumBackground />
+      <HowToPlayButton />
       <DayNightToggle />
       <MuteToggle />
+      <Box
+        component="footer"
+        sx={{
+          position: 'fixed',
+          bottom: 8,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          textAlign: 'center',
+          fontSize: '0.75rem',
+          color: 'rgba(248, 250, 252, 0.7)',
+          pointerEvents: 'none',
+          textShadow: '0 1px 2px rgba(0, 0, 0, 0.6)',
+        }}
+      >
+        ⚡ May the digits be in your favor | Developed by{' '}
+        <a
+          href="https://www.linkedin.com/in/udit-singhal2404/"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: 'inherit',
+            textDecoration: 'underline',
+            pointerEvents: 'auto',
+          }}
+        >
+          Udit Singhal
+        </a>{' '}
+        | Powered by Numbers 📊
+      </Box>
       <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
       <AnimatePresence mode="wait">
         {screen === 'playerName' && (
