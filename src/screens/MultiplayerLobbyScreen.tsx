@@ -9,22 +9,38 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { motion, type Variants } from 'framer-motion'
 import { useMultiplayer } from '../multiplayer/useMultiplayer'
+import type { BallsPerInnings } from '../game/types'
 
 type Props = {
   playerName: string
   onCancel: () => void
-  onConnected: () => void
+  // Called once the peer connection is open. Carries the match length the
+  // host picked (so App can stash it without a separate screen). null when
+  // we're the joiner — the length arrives via the MATCH_LENGTH message
+  // App.tsx subscribes to globally.
+  onConnected: (hostMatchLength: BallsPerInnings | null) => void
 }
 
-// Local view state on top of the global multiplayer status. The lobby shows
-// one of three sub-views (menu / hosting / joining) based on user choice.
-type LobbyView = 'menu' | 'hosting' | 'joining'
+// Local view state on top of the global multiplayer status. The lobby now
+// has four sub-views: the menu, the host's match-length picker (shown before
+// the code is generated so the room is "configured" from the start), the
+// hosting waiting screen, and the joiner's code-entry screen.
+type LobbyView = 'menu' | 'hostMatchLength' | 'hosting' | 'joining'
 
 const containerVariants = {
   initial: { opacity: 0, y: 32 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
   exit: { opacity: 0, y: -24, transition: { duration: 0.3, ease: 'easeIn' } },
 } satisfies Variants
+
+// How long a generated room code stays valid for. After this window the host
+// is shown an "expired" message and auto-routed back to mode selection, and
+// the PeerJS peer is destroyed so any joiner who tries the code from here on
+// hits the same "Wrong code entered" error path as a typo.
+const ROOM_CODE_LIFETIME_MS = 5 * 60 * 1000
+// How long the expired message lingers before the host is auto-redirected
+// to mode selection. Long enough to read, short enough to feel intentional.
+const EXPIRED_AUTO_REDIRECT_MS = 4000
 
 // Multiplayer lobby. Either creates a new room (Host: generates a 6-char
 // code, waits for an opponent to join) or joins an existing one (Join:
@@ -34,20 +50,58 @@ export default function MultiplayerLobbyScreen({ playerName, onCancel, onConnect
   const { status, roomCode, errorMessage, host, join, disconnect, send } = useMultiplayer()
   const [view, setView] = useState<LobbyView>('menu')
   const [codeInput, setCodeInput] = useState('')
+  // Host's match-length pick, captured BEFORE the room code is generated.
+  // Stays null on the joiner side. Cached locally so the connect-time effect
+  // can broadcast MATCH_LENGTH right after HELLO without an extra screen.
+  const [hostMatchLength, setHostMatchLength] = useState<BallsPerInnings | null>(null)
+  // True once the 5-minute lifetime of a generated room code elapses without
+  // anyone joining. Drives the ExpiredView render below.
+  const [isExpired, setIsExpired] = useState(false)
+
+  // 5-minute room-code expiry watchdog. Starts ticking once the host has a
+  // live, unjoined room (view=hosting, roomCode set, status still 'hosting').
+  // If it fires, we destroy the peer (so the broker no longer routes that
+  // code — the joiner's existing wrong-code path will take over for any late
+  // dial attempts) and flip into the ExpiredView for the host.
+  useEffect(() => {
+    if (view !== 'hosting' || !roomCode || status !== 'hosting' || isExpired) return
+    const timer = window.setTimeout(() => {
+      setIsExpired(true)
+      disconnect()
+    }, ROOM_CODE_LIFETIME_MS)
+    return () => window.clearTimeout(timer)
+  }, [view, roomCode, status, isExpired, disconnect])
 
   // As soon as the connection opens, we send our name (so the other side can
-  // greet us) and notify the parent so it can navigate to the connected screen.
-  // Future Parts will piggy-back more handshake info onto HELLO.
+  // greet us). The host additionally broadcasts the match length they picked
+  // at the start of the lobby so the joiner has it before any gameplay
+  // screen mounts. Then notify the parent so App can advance the screen.
   useEffect(() => {
-    if (status === 'connected') {
-      send({ type: 'HELLO', name: playerName })
-      onConnected()
+    if (status !== 'connected') return
+    send({ type: 'HELLO', name: playerName })
+    if (hostMatchLength !== null) {
+      send({ type: 'MATCH_LENGTH', balls: hostMatchLength })
     }
-  }, [status, send, playerName, onConnected])
+    onConnected(hostMatchLength)
+  }, [status, send, playerName, onConnected, hostMatchLength])
 
-  // Switches to the "hosting" view and kicks off the peer.
-  const handleHost = () => {
+  // Menu → match-length picker. The PeerJS peer is NOT created yet — we wait
+  // until the host has actually committed to a match length.
+  const handleHostStart = () => {
+    setView('hostMatchLength')
+  }
+
+  // Host picked 6 or 12. Cache the choice, switch to the hosting view, and
+  // finally kick off the peer (which generates the room code).
+  const handleHostMatchLengthPick = (count: BallsPerInnings) => {
+    setHostMatchLength(count)
     setView('hosting')
+    void host()
+  }
+
+  // Used as the HostingView's "Try again" handler after a broker error.
+  // Reuses the already-picked match length, just re-creates the peer.
+  const handleHostRetry = () => {
     void host()
   }
 
@@ -88,17 +142,32 @@ export default function MultiplayerLobbyScreen({ playerName, onCancel, onConnect
     >
       <Box sx={{ width: '100%', maxWidth: 480, px: 3, py: 6, textAlign: 'center' }}>
         {view === 'menu' && (
-          <MenuView onHost={handleHost} onJoinStart={handleJoinStart} onBack={onCancel} />
+          <MenuView onHost={handleHostStart} onJoinStart={handleJoinStart} onBack={onCancel} />
         )}
 
-        {view === 'hosting' && (
+        {view === 'hostMatchLength' && (
+          <HostMatchLengthView onPick={handleHostMatchLengthPick} onBack={() => setView('menu')} />
+        )}
+
+        {view === 'hosting' && !isExpired && (
           <HostingView
             roomCode={roomCode}
             status={status}
             errorMessage={errorMessage}
+            matchLength={hostMatchLength}
             onCopy={handleCopy}
             onCancel={handleCancel}
-            onRetry={handleHost}
+            onRetry={handleHostRetry}
+          />
+        )}
+
+        {view === 'hosting' && isExpired && (
+          <ExpiredView
+            onBack={() => {
+              setIsExpired(false)
+              setView('menu')
+              onCancel()
+            }}
           />
         )}
 
@@ -177,6 +246,7 @@ function HostingView({
   roomCode,
   status,
   errorMessage,
+  matchLength,
   onCopy,
   onCancel,
   onRetry,
@@ -184,6 +254,7 @@ function HostingView({
   roomCode: string | null
   status: string
   errorMessage: string | null
+  matchLength: BallsPerInnings | null
   onCopy: () => void
   onCancel: () => void
   onRetry: () => void
@@ -202,9 +273,16 @@ function HostingView({
       </Typography>
 
       {roomCode && !isError && (
-        <Typography variant="body2" sx={{ opacity: 0.75 }}>
-          Share this code with your friend so they can join.
-        </Typography>
+        <Stack spacing={0.5} alignItems="center">
+          <Typography variant="body2" sx={{ opacity: 0.75 }}>
+            Share this code with your friend so they can join.
+          </Typography>
+          {matchLength !== null && (
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              {matchLength}-ball match
+            </Typography>
+          )}
+        </Stack>
       )}
 
       {isWaitingForBroker && (
@@ -325,6 +403,89 @@ function JoiningView({
           Connect
         </Button>
       </Stack>
+    </Stack>
+  )
+}
+
+// Host-only sub-view shown BEFORE the room code is generated. The host
+// commits to a match length here; only after they pick does the lobby
+// proceed to creating the peer and surfacing the room code. This way the
+// "room" has its match length baked in from the moment the code is shared,
+// and the joiner doesn't need to wait through a separate length-pick screen
+// after connecting.
+function HostMatchLengthView({
+  onPick,
+  onBack,
+}: {
+  onPick: (count: BallsPerInnings) => void
+  onBack: () => void
+}) {
+  return (
+    <Stack spacing={4} alignItems="center">
+      <Stack spacing={1} alignItems="center">
+        <Typography variant="h4" component="h1" className="title">
+          Match length
+        </Typography>
+        <Typography variant="body1" sx={{ opacity: 0.75 }}>
+          Pick how many balls per innings before sharing the room code.
+        </Typography>
+      </Stack>
+
+      <Stack direction="row" spacing={2} sx={{ width: '100%' }}>
+        <Button
+          variant="contained"
+          color="primary"
+          size="large"
+          onClick={() => onPick(6)}
+          sx={{ flex: 1, py: 2.5, flexDirection: 'column', gap: 0.5 }}
+        >
+          <Typography sx={{ fontSize: '1rem', fontWeight: 700 }}>6 Ball Game</Typography>
+          <Typography sx={{ fontSize: '0.78rem', opacity: 0.8 }}>1 over</Typography>
+        </Button>
+        <Button
+          variant="contained"
+          color="secondary"
+          size="large"
+          onClick={() => onPick(12)}
+          sx={{ flex: 1, py: 2.5, flexDirection: 'column', gap: 0.5 }}
+        >
+          <Typography sx={{ fontSize: '1rem', fontWeight: 700 }}>12 Ball Game</Typography>
+          <Typography sx={{ fontSize: '0.78rem', opacity: 0.8 }}>2 overs</Typography>
+        </Button>
+      </Stack>
+
+      <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>
+        Back
+      </Button>
+    </Stack>
+  )
+}
+
+// Shown when a generated room code's 5-minute lifetime elapses without
+// anyone joining. Tells the host their code is dead and auto-returns to
+// mode selection after EXPIRED_AUTO_REDIRECT_MS — same place the Cancel
+// button on the hosting screen would have sent them. A "Back to mode
+// select" button lets them leave sooner if they want.
+function ExpiredView({ onBack }: { onBack: () => void }) {
+  useEffect(() => {
+    const timer = window.setTimeout(onBack, EXPIRED_AUTO_REDIRECT_MS)
+    return () => window.clearTimeout(timer)
+  }, [onBack])
+
+  return (
+    <Stack spacing={3} alignItems="center">
+      <Typography variant="h5" component="h1" className="title">
+        Code expired
+      </Typography>
+      <Typography color="error" variant="body1" sx={{ textAlign: 'center', maxWidth: 360 }}>
+        The code expired after 5 minutes of wait.
+      </Typography>
+      <Typography variant="body2" sx={{ opacity: 0.7 }}>
+        Returning to mode selection…
+      </Typography>
+      <Button variant="contained" onClick={onBack}>
+        Back to mode select
+      </Button>
     </Stack>
   )
 }

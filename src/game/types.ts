@@ -3,7 +3,6 @@ export type ScreenName =
   | 'modeSelect'
   | 'matchLength'
   | 'multiplayerLobby'
-  | 'multiplayerMatchLength'
   | 'multiplayerCoinToss'
   | 'multiplayerBatOrBowl'
   | 'multiplayerGameplay'
@@ -64,4 +63,5 @@ export type MatchResult = {
   events: BallEvent[]
 }
 
+export const MIN_PLAYER_NAME_LENGTH = 2
 export const MAX_PLAYER_NAME_LENGTH = 20

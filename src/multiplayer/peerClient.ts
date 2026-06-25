@@ -9,6 +9,13 @@ const ROOM_CODE_LENGTH = 6
 // in many fonts when people are dictating a code over the phone).
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
+// How long the joiner waits for the host's DataConnection to open after the
+// broker registration succeeds. PeerJS doesn't always emit `peer-unavailable`
+// promptly (or at all) for an invalid host ID, so without this watchdog the
+// UI sits on the "Connecting…" spinner forever. ~8s is plenty of slack for
+// a real round-trip and short enough to feel responsive on a wrong code.
+const JOIN_CONN_TIMEOUT_MS = 8000
+
 // Generates a fresh random room code from the unambiguous alphabet.
 function generateRoomCode(): string {
   return Array.from(
@@ -41,6 +48,9 @@ export class PeerClient {
   // resolves with that code once the broker confirms registration. The peer
   // then listens for an incoming connection from the joiner.
   async host(): Promise<string> {
+    // Clean up any stale peer from a previous attempt so retries don't leak
+    // handlers / connections.
+    this.cleanupPeer()
     const code = generateRoomCode()
     console.log('[multiplayer] host: creating peer with code', code)
     this.peer = new Peer(code)
@@ -72,33 +82,89 @@ export class PeerClient {
     })
   }
 
-  // Creates a peer with a random ID and dials the host's room code. Resolves
-  // once the dial returns; the actual "open" event fires later on the
-  // resulting DataConnection (and we route that into onConnected).
+  // Creates a peer with a random ID and dials the host's room code. The
+  // promise resolves only once the DataConnection to the host actually opens
+  // — not just when our own broker registration completes. If the host code
+  // is wrong (or the host has vanished), neither `conn.on('open')` nor
+  // `peer.on('error')` may fire promptly, so we watchdog the dial with a
+  // JOIN_CONN_TIMEOUT_MS timer and surface a "wrong code" error to the UI.
   async join(roomCode: string): Promise<void> {
+    // Clean up any stale peer from a previous (failed) attempt so retries
+    // get a fresh start — old handlers + connections gone.
+    this.cleanupPeer()
     console.log('[multiplayer] join: dialling room', roomCode)
     this.peer = new Peer()
     return new Promise((resolve, reject) => {
-      const failTimer = window.setTimeout(() => {
-        console.warn('[multiplayer] join: timed out waiting for broker')
-        reject(new Error('Timed out connecting to the room'))
+      // Single-shot guards so timer + open + error paths can't fire
+      // resolve/reject more than once.
+      let settled = false
+      const finishOk = () => {
+        if (settled) return
+        settled = true
+        resolve()
+      }
+      const finishErr = (message: string) => {
+        if (settled) return
+        settled = true
+        // Destroy the peer so any late PeerJS error events don't overwrite
+        // the message we're about to surface, or fire callbacks after the
+        // user has already retried with a fresh code.
+        this.cleanupPeer()
+        this.callbacks.onError(message)
+        reject(new Error(message))
+      }
+
+      // Outer timer: broker registration itself failing (network down etc).
+      const brokerTimer = window.setTimeout(() => {
+        console.warn('[multiplayer] join: timed out reaching broker')
+        finishErr('Timed out connecting to the room')
       }, 15000)
 
       this.peer!.on('open', (id) => {
         console.log('[multiplayer] join: registered as', id, 'now connecting to host')
+        window.clearTimeout(brokerTimer)
         const conn = this.peer!.connect(roomCode, { reliable: true })
         this.attachConnection(conn)
-        window.clearTimeout(failTimer)
-        resolve()
+
+        // Inner timer: from peer.connect() until conn.on('open') fires.
+        // Expires if the host code is wrong or the host isn't reachable.
+        const connTimer = window.setTimeout(() => {
+          console.warn('[multiplayer] join: conn open timed out — likely wrong code')
+          finishErr('Wrong code entered — no room found with that code.')
+        }, JOIN_CONN_TIMEOUT_MS)
+
+        // Resolve when the connection actually opens (attachConnection also
+        // calls onConnected on the same event — this listener just signals
+        // the promise side that the dial succeeded).
+        conn.on('open', () => {
+          window.clearTimeout(connTimer)
+          finishOk()
+        })
       })
+
       this.peer!.on('error', (err) => {
         console.error('[multiplayer] join: PeerJS error', err)
-        window.clearTimeout(failTimer)
-        const message = this.describeError(err)
-        this.callbacks.onError(message)
-        reject(new Error(message))
+        window.clearTimeout(brokerTimer)
+        finishErr(this.describeError(err))
       })
     })
+  }
+
+  // Destroys the current peer + connection if any. Used at the start of
+  // host() / join() so a retry after an error starts from a clean slate.
+  private cleanupPeer(): void {
+    try {
+      this.conn?.close()
+    } catch {
+      // ignore
+    }
+    try {
+      this.peer?.destroy()
+    } catch {
+      // ignore
+    }
+    this.conn = null
+    this.peer = null
   }
 
   // Wires up the DataConnection's events to our callbacks. The connection
@@ -128,18 +194,7 @@ export class PeerClient {
 
   // Tears everything down. Safe to call multiple times.
   destroy(): void {
-    try {
-      this.conn?.close()
-    } catch {
-      // ignore
-    }
-    try {
-      this.peer?.destroy()
-    } catch {
-      // ignore
-    }
-    this.conn = null
-    this.peer = null
+    this.cleanupPeer()
   }
 
   // Maps PeerJS error types to friendly messages. PeerJS's `err` is a plain

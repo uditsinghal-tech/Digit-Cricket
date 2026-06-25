@@ -5,7 +5,6 @@ import PlayerNameScreen from './screens/PlayerNameScreen'
 import ModeSelectionScreen from './screens/ModeSelectionScreen'
 import MatchLengthScreen from './screens/MatchLengthScreen'
 import MultiplayerLobbyScreen from './screens/MultiplayerLobbyScreen'
-import MultiplayerMatchLengthScreen from './screens/MultiplayerMatchLengthScreen'
 import MultiplayerCoinTossScreen from './screens/MultiplayerCoinTossScreen'
 import MultiplayerBatOrBowlScreen from './screens/MultiplayerBatOrBowlScreen'
 import CoinTossScreen from './screens/CoinTossScreen'
@@ -16,6 +15,7 @@ import StadiumBackground from './components/StadiumBackground'
 import MuteToggle from './components/MuteToggle'
 import DayNightToggle from './components/DayNightToggle'
 import { useMultiplayer } from './multiplayer/useMultiplayer'
+import type { NetworkMessage } from './multiplayer/messages'
 import type {
   BallsPerInnings,
   GameMode,
@@ -38,8 +38,22 @@ function App() {
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null)
 
   // Pulled so the post-match handlers can branch on whether the player is
-  // currently in a multiplayer room. Disconnect is the clean exit path.
-  const { status: multiplayerStatus, opponentName, disconnect } = useMultiplayer()
+  // currently in a multiplayer room. `subscribe` is used to receive the
+  // host-broadcast MATCH_LENGTH on the joiner side. Disconnect is the clean
+  // exit path.
+  const { status: multiplayerStatus, opponentName, disconnect, subscribe } = useMultiplayer()
+
+  // Joiner-side subscription. The host broadcasts MATCH_LENGTH right after
+  // the connection opens (it's cached in the lobby BEFORE the room code is
+  // generated), so by the time the joiner reaches any gameplay screen
+  // ballsPerInnings is populated. Singleplayer ignores this entirely.
+  useEffect(() => {
+    return subscribe((msg: NetworkMessage) => {
+      if (msg.type === 'MATCH_LENGTH') {
+        setBallsPerInnings(msg.balls)
+      }
+    })
+  }, [subscribe])
 
   // If the peer connection drops while we're inside any active in-match
   // multiplayer flow, route the user back to mode selection so they're never
@@ -51,7 +65,6 @@ function App() {
   useEffect(() => {
     if (multiplayerStatus === 'connected') return
     const inMatchMultiplayerScreens: ScreenName[] = [
-      'multiplayerMatchLength',
       'multiplayerCoinToss',
       'multiplayerBatOrBowl',
       'multiplayerGameplay',
@@ -74,10 +87,16 @@ function App() {
     setScreen(mode === 'singleplayer' ? 'matchLength' : 'multiplayerLobby')
   }
 
-  // Called by the lobby once the PeerJS connection has opened — advance to
-  // the multiplayer match-length picker.
-  const handleMultiplayerConnected = () => {
-    setScreen('multiplayerMatchLength')
+  // Called by the lobby once the PeerJS connection has opened. The host
+  // already committed to a match length in the lobby (before the room code
+  // was generated) and passes it in here so we can stash it and skip
+  // straight to the coin toss. Joiner passes null — its ballsPerInnings is
+  // populated by the top-level MATCH_LENGTH subscription above.
+  const handleMultiplayerConnected = (hostMatchLength: BallsPerInnings | null) => {
+    if (hostMatchLength !== null) {
+      setBallsPerInnings(hostMatchLength)
+    }
+    setScreen('multiplayerCoinToss')
   }
 
   // Singleplayer match-length picker callback — saves the chosen number of
@@ -85,14 +104,6 @@ function App() {
   const handleMatchLengthSelect = (count: BallsPerInnings) => {
     setBallsPerInnings(count)
     setScreen('coinToss')
-  }
-
-  // Multiplayer match-length sync callback — fires on the host (when they
-  // pick) and on the joiner (when the MATCH_LENGTH message arrives). Both
-  // sides advance to the multiplayer coin toss after this.
-  const handleMultiplayerMatchLengthSet = (count: BallsPerInnings) => {
-    setBallsPerInnings(count)
-    setScreen('multiplayerCoinToss')
   }
 
   // Multiplayer coin-toss completion — fires on both peers once the coin has
@@ -189,13 +200,6 @@ function App() {
             playerName={playerName}
             onCancel={handleLobbyCancel}
             onConnected={handleMultiplayerConnected}
-          />
-        )}
-        {screen === 'multiplayerMatchLength' && (
-          <MultiplayerMatchLengthScreen
-            key="multiplayer-match-length"
-            playerName={playerName}
-            onMatchLengthSet={handleMultiplayerMatchLengthSet}
           />
         )}
         {screen === 'multiplayerCoinToss' && (

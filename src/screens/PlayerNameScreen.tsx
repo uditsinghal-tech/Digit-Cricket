@@ -6,7 +6,15 @@ import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
 import SportsCricketIcon from '@mui/icons-material/SportsCricket'
 import { motion, type Variants } from 'framer-motion'
-import { MAX_PLAYER_NAME_LENGTH } from '../game/types'
+import { MAX_PLAYER_NAME_LENGTH, MIN_PLAYER_NAME_LENGTH } from '../game/types'
+
+// Whitelist of characters allowed in a player name. Letters (incl. Unicode
+// for international names), digits, and spaces only. Everything else —
+// quotes, angle brackets, ampersands, backticks, slashes, semicolons, etc.
+// — is rejected. Rendering already escapes via React, but blocking these
+// at input time keeps malformed names out of the PeerJS HELLO payload and
+// out of the scoreboard / result UI.
+const ALLOWED_NAME_PATTERN = /^[\p{L}\p{N} ]*$/u
 
 type Props = {
   onSubmit: (name: string) => void
@@ -26,21 +34,30 @@ export default function PlayerNameScreen({ onSubmit }: Props) {
 
   const trimmed = value.trim()
   const isEmpty = trimmed.length === 0
+  const isTooShort = trimmed.length > 0 && trimmed.length < MIN_PLAYER_NAME_LENGTH
   const isTooLong = trimmed.length > MAX_PLAYER_NAME_LENGTH
+  const hasInvalidChars = trimmed.length > 0 && !ALLOWED_NAME_PATTERN.test(trimmed)
+  const isInvalid = isEmpty || isTooShort || isTooLong || hasInvalidChars
   const showEmptyError = touched && isEmpty
+  const showShortError = touched && isTooShort
   const showLengthError = isTooLong
+  const showInvalidCharsError = touched && hasInvalidChars
   const errorText = showEmptyError
     ? 'Please enter a name to continue'
-    : showLengthError
-      ? `Max ${MAX_PLAYER_NAME_LENGTH} characters`
-      : ' '
+    : showShortError
+      ? `Min ${MIN_PLAYER_NAME_LENGTH} characters`
+      : showLengthError
+        ? `Max ${MAX_PLAYER_NAME_LENGTH} characters`
+        : showInvalidCharsError
+          ? 'Only letters, numbers, and spaces allowed'
+          : ' '
 
   // Form submit handler. Marks the field as touched so errors are allowed to
   // show, blocks if invalid, otherwise hands the trimmed name to the parent.
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setTouched(true)
-    if (isEmpty || isTooLong) return
+    if (isInvalid) return
     onSubmit(trimmed)
   }
 
@@ -100,7 +117,7 @@ export default function PlayerNameScreen({ onSubmit }: Props) {
             variant="contained"
             size="large"
             fullWidth
-            disabled={isEmpty || isTooLong}
+            disabled={isInvalid}
             sx={{ py: 1.25, fontSize: '1rem' }}
           >
             Continue

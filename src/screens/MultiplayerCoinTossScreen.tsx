@@ -27,6 +27,8 @@ const containerVariants = {
 
 const FLIP_ROTATIONS = 4
 const FLIP_DURATION = 2.2
+// How long the result is held on screen before auto-advancing to the next screen.
+const AUTO_ADVANCE_MS = 1600
 
 // Rolls a fair 50/50 heads-or-tails. Only the host calls this — the joiner
 // receives the value over the wire so both sides land on the same face.
@@ -73,24 +75,27 @@ export default function MultiplayerCoinTossScreen({ playerName, onComplete }: Pr
     send({ type: 'TOSS_CALL', side })
   }
 
-  // Continue button: derives the winner from each side's local perspective
-  // and bubbles up the TossOutcome to App so the result can be persisted in
-  // global state.
-  const handleContinue = () => {
-    if (!userChoice || !result) return
-    // The joiner called. From the joiner's perspective: 'player' won if their
-    // call matched. From the host's perspective: 'player' won if the joiner's
-    // call did NOT match.
-    const joinerWonToss = userChoice === result
-    const winner: TossWinner = isHost
-      ? joinerWonToss
-        ? 'computer'
-        : 'player'
-      : joinerWonToss
-        ? 'player'
-        : 'computer'
-    onComplete({ userChoice, result, winner })
-  }
+  // Auto-advance once the coin has finished revealing. Derives the winner
+  // from each side's local perspective and bubbles up the TossOutcome to App
+  // after AUTO_ADVANCE_MS so the player has time to read the result.
+  // The joiner called. From the joiner's perspective: 'player' won if their
+  // call matched. From the host's perspective: 'player' won if the joiner's
+  // call did NOT match.
+  useEffect(() => {
+    if (phase !== 'revealed' || !userChoice || !result) return
+    const timer = setTimeout(() => {
+      const joinerWonToss = userChoice === result
+      const winner: TossWinner = isHost
+        ? joinerWonToss
+          ? 'computer'
+          : 'player'
+        : joinerWonToss
+          ? 'player'
+          : 'computer'
+      onComplete({ userChoice, result, winner })
+    }, AUTO_ADVANCE_MS)
+    return () => clearTimeout(timer)
+  }, [phase, userChoice, result, isHost, onComplete])
 
   // Final rotation in degrees: four full spins plus a half-turn iff the coin
   // landed tails. With both faces sharing the same parent <motion.div>, this
@@ -261,14 +266,6 @@ export default function MultiplayerCoinTossScreen({ playerName, onComplete }: Pr
                       ? `You won the toss, ${playerName}!`
                       : `${opponentName ?? 'Opponent'} won the toss.`}
                   </Typography>
-                  <Button
-                    variant="contained"
-                    size="large"
-                    onClick={handleContinue}
-                    sx={{ py: 1.25, fontSize: '1rem', width: '100%' }}
-                  >
-                    Continue
-                  </Button>
                 </Stack>
               </motion.div>
             )}

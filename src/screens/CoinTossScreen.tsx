@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -21,6 +21,9 @@ const containerVariants = {
 
 const FLIP_ROTATIONS = 4
 const FLIP_DURATION = 2.2
+// How long the result is held on screen before the parent is notified.
+// Long enough to read the headline, short enough to feel snappy.
+const AUTO_ADVANCE_MS = 1600
 
 // Coin lands heads or tails with 50/50 odds.
 function pickRandomSide(): Side {
@@ -45,15 +48,18 @@ export default function CoinTossScreen({ playerName, onComplete }: Props) {
     setPhase('flipping')
   }
 
-  // After the reveal, derives who won the toss and hands the outcome to the parent.
-  const handleContinue = () => {
-    if (!userChoice || !result) return
-    const winner: TossWinner = userChoice === result ? 'player' : 'computer'
-    onComplete({ userChoice, result, winner })
-  }
-
   const winner: TossWinner | null =
     userChoice && result ? (userChoice === result ? 'player' : 'computer') : null
+
+  // Auto-advance once the coin has finished revealing. Holds the result on
+  // screen for AUTO_ADVANCE_MS so the player can read it, then fires onComplete.
+  useEffect(() => {
+    if (phase !== 'revealed' || !userChoice || !result || !winner) return
+    const timer = setTimeout(() => {
+      onComplete({ userChoice, result, winner })
+    }, AUTO_ADVANCE_MS)
+    return () => clearTimeout(timer)
+  }, [phase, userChoice, result, winner, onComplete])
 
   return (
     <motion.div
@@ -176,14 +182,6 @@ export default function CoinTossScreen({ playerName, onComplete }: Props) {
                       ? `You called ${userChoice} — you won the toss!`
                       : `You called ${userChoice}. Computer wins the toss.`}
                   </Typography>
-                  <Button
-                    variant="contained"
-                    size="large"
-                    onClick={handleContinue}
-                    sx={{ py: 1.25, fontSize: '1rem', width: '100%' }}
-                  >
-                    Continue
-                  </Button>
                 </Stack>
               </motion.div>
             )}
