@@ -64,6 +64,30 @@ const BALL_TIMER_SECONDS = 10
 // player feels the deadline approaching. 4s ≈ 40% of the window — late
 // enough to feel like a real warning, early enough to still react.
 const TIMER_WARNING_THRESHOLD = 4
+// Maps a pick number to the hand gesture the pick card should display
+// when it's revealed. 1..5 are "this many fingers up" emoji, 6 is a
+// thumbs-up (since 6 fingers aren't a thing), and 0 (the auto-pick
+// sentinel fired when the timer expires) collapses back to the closed
+// fist so a timeout pick visually reads as "didn't show their hand".
+function gestureFor(pick: BallNumber): string {
+  switch (pick) {
+    case 1:
+      return '☝️'
+    case 2:
+      return '✌️'
+    case 3:
+      return '🤟'
+    case 4:
+      return '🤚'
+    case 5:
+      return '🖐'
+    case 6:
+      return '👍'
+    default:
+      return '✊'
+  }
+}
+
 // Picks a face mood for one side based on the latest ball: batter smiles
 // on runs, frowns on out; bowler is the opposite. Neutral outside the reveal.
 function deriveMood(perspective: Innings, ctx: CricketContext, isRevealing: boolean): Mood {
@@ -512,7 +536,7 @@ function PicksDisplay({
   isOut: boolean
 }) {
   return (
-    <Stack direction="row" justifyContent="space-around" alignItems="flex-start">
+    <Stack direction="row" justifyContent="space-around" alignItems="flex-start" sx={{ mt: 1.25 }}>
       <Stack alignItems="center" spacing={0.75}>
         <Chip
           size="small"
@@ -561,11 +585,11 @@ function PickCard({
 }) {
   const accentColor = accent === 'primary' ? '#38bdf8' : '#a855f7'
   return (
-    <Stack alignItems="center" spacing={0.5} sx={{ width: 100 }}>
+    <Stack alignItems="center" spacing={0.5} sx={{ width: 120 }}>
       <Box
         sx={{
-          width: 72,
-          height: 72,
+          width: 96,
+          height: 96,
           borderRadius: 2.5,
           border: `2px solid ${accentColor}`,
           background: 'linear-gradient(160deg, rgba(15,23,42,0.7), rgba(15,23,42,0.95))',
@@ -579,18 +603,25 @@ function PickCard({
       >
         <AnimatePresence mode="wait" initial={false}>
           {pick == null ? (
+            // Waiting: closed fist that bobs up and down on a continuous
+            // loop, like a player tapping their hand getting ready to
+            // reveal their pick.
             <motion.div
               key="placeholder"
               initial={{ opacity: 0 }}
-              animate={{ opacity: 0.55 }}
+              animate={{ opacity: 1, y: [0, -6, 0, 6, 0] }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={{
+                opacity: { duration: 0.2 },
+                y: { duration: 0.85, repeat: Infinity, ease: 'easeInOut' },
+              }}
             >
-              <Typography variant="h3" sx={{ fontWeight: 900, color: accentColor }}>
-                ?
-              </Typography>
+              <Typography sx={{ fontSize: '3.2rem', lineHeight: 1 }}>✊</Typography>
             </motion.div>
           ) : (
+            // Revealed: the hand gesture that corresponds to the pick.
+            // 1..5 = that many fingers up; 6 = thumbs up; 0 = closed
+            // fist (the auto-pick path when the timer expires).
             <motion.div
               key={`pick-${pick}`}
               initial={{ scale: 0.4, opacity: 0, rotate: -25 }}
@@ -599,13 +630,16 @@ function PickCard({
               transition={{ delay, duration: 0.45, type: 'spring', stiffness: 220 }}
             >
               <Typography
-                variant="h3"
                 sx={{
-                  fontWeight: 900,
-                  color: isOut ? '#f87171' : accentColor,
+                  fontSize: '3.2rem',
+                  lineHeight: 1,
+                  // Wicket-taking pick gets a subtle desaturation so the
+                  // emoji still reads but visually loses its colour pop.
+                  filter: isOut ? 'grayscale(60%) brightness(0.85)' : 'none',
+                  transition: 'filter 0.25s ease',
                 }}
               >
-                {pick}
+                {gestureFor(pick)}
               </Typography>
             </motion.div>
           )}
