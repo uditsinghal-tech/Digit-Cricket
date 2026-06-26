@@ -1,4 +1,5 @@
 import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import WbSunnyIcon from '@mui/icons-material/WbSunny'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import { useStadiumMode } from '../stadium/useStadiumMode'
@@ -10,6 +11,7 @@ export default function DayNightToggle() {
   const { mode, toggleMode } = useStadiumMode()
   const isDay = mode === 'day'
   return (
+    <Tooltip title={isDay ? 'Switch to night mode' : 'Switch to day mode'} arrow>
     <IconButton
       onClick={toggleMode}
       aria-label={isDay ? 'Switch to night mode' : 'Switch to day mode'}
@@ -30,5 +32,6 @@ export default function DayNightToggle() {
     >
       {isDay ? <DarkModeIcon /> : <WbSunnyIcon />}
     </IconButton>
+    </Tooltip>
   )
 }

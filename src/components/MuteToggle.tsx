@@ -1,4 +1,5 @@
 import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import VolumeUpIcon from '@mui/icons-material/VolumeUp'
 import VolumeOffIcon from '@mui/icons-material/VolumeOff'
 import { useSounds } from '../audio/useSounds'
@@ -8,9 +9,10 @@ import { useSounds } from '../audio/useSounds'
 export default function MuteToggle() {
   const { muted, toggleMute } = useSounds()
   return (
+    <Tooltip title={muted ? 'Unmute sound' : 'Mute sound'} arrow>
     <IconButton
       onClick={toggleMute}
-      aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
+      aria-label={muted ? 'Unmute sound' : 'Mute sound'}
       sx={{
         position: 'fixed',
         top: 12,
@@ -28,5 +30,6 @@ export default function MuteToggle() {
     >
       {muted ? <VolumeOffIcon /> : <VolumeUpIcon />}
     </IconButton>
+    </Tooltip>
   )
 }
