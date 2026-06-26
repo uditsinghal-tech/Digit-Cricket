@@ -333,15 +333,10 @@ export default function GameplayScreen({
             )}
           </Box>
 
-          <RoleBanner
-            playerBatting={playerBatting}
-            playerName={playerName}
-            opponentName={opponentName}
-          />
-
           <PicksDisplay
             playerName={playerName}
             opponentName={opponentName}
+            playerBatting={playerBatting}
             playerPick={isRevealing ? playerPick : null}
             computerPick={isRevealing ? computerPick : null}
             isOut={isRevealing ? ctx.lastBall?.isOut === true : false}
@@ -507,60 +502,56 @@ function AnimatedScore({ score, accent }: { score: number; accent: 'primary' | '
   )
 }
 
-// Two chips reminding the user who's batting and who's bowling this innings.
-function RoleBanner({
-  playerBatting,
-  playerName,
-  opponentName,
-}: {
-  playerBatting: boolean
-  playerName: string
-  opponentName: string
-}) {
-  return (
-    <Stack direction="row" justifyContent="center" spacing={1} alignItems="center">
-      <Chip
-        size="small"
-        label={playerBatting ? `${playerName} batting` : `${opponentName} batting`}
-        color={playerBatting ? 'primary' : 'secondary'}
-      />
-      <Chip
-        size="small"
-        variant="outlined"
-        label={playerBatting ? `${opponentName} bowling` : `${playerName} bowling`}
-      />
-    </Stack>
-  )
-}
-
 // Side-by-side cards for the current ball's picks. Shows "?" while waiting
 // and reveals the player's number first, then the opponent's, with a delay.
+// Each side renders as a vertical column: a role chip (`Name batting` or
+// `Name bowling`) on top, then the pick card below. The chip auto-sizes to
+// its text, and the pick card is centred underneath so the "?" lines up
+// directly with the chip's centre regardless of name length.
 function PicksDisplay({
   playerName,
   opponentName,
+  playerBatting,
   playerPick,
   computerPick,
   isOut,
 }: {
   playerName: string
   opponentName: string
+  playerBatting: boolean
   playerPick: BallNumber | null | undefined
   computerPick: BallNumber | null | undefined
   isOut: boolean
 }) {
   return (
-    <Stack direction="row" spacing={2} justifyContent="center" alignItems="center">
-      <PickCard label={playerName} pick={playerPick} accent="primary" isOut={isOut} delay={0} />
-      <Typography variant="h6" sx={{ opacity: 0.4 }}>
+    <Stack direction="row" justifyContent="space-around" alignItems="flex-start">
+      <Stack alignItems="center" spacing={0.75}>
+        <Chip
+          size="small"
+          label={`${playerName} ${playerBatting ? 'Batting' : 'Bowling'}`}
+          color="primary"
+          variant={playerBatting ? 'filled' : 'outlined'}
+        />
+        <PickCard label={playerName} pick={playerPick} accent="primary" isOut={isOut} delay={0} />
+      </Stack>
+      <Typography variant="h6" sx={{ opacity: 0.4, mt: 5 }}>
         vs
       </Typography>
-      <PickCard
-        label={opponentName}
-        pick={computerPick}
-        accent="secondary"
-        isOut={isOut}
-        delay={0.6}
-      />
+      <Stack alignItems="center" spacing={0.75}>
+        <Chip
+          size="small"
+          label={`${opponentName} ${playerBatting ? 'Bowling' : 'Batting'}`}
+          color="secondary"
+          variant={playerBatting ? 'outlined' : 'filled'}
+        />
+        <PickCard
+          label={opponentName}
+          pick={computerPick}
+          accent="secondary"
+          isOut={isOut}
+          delay={0.6}
+        />
+      </Stack>
     </Stack>
   )
 }
