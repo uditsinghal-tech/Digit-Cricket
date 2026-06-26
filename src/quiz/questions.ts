@@ -1053,9 +1053,13 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   { id: 1000, difficulty: 'extreme', question: 'Who hit the first international century in Afghanistan\'s ODI history?', options: ['Mohammad Shahzad', 'Asghar Stanikzai', 'Mohammad Nabi', 'Niche record'], correctIndex: 0 },
 ]
 
-// What the user picked on the QuizDifficultyScreen. 'mixed' includes every
-// difficulty band; the other three filter to just their own band.
-export type QuizDifficultyChoice = 'easy' | 'medium' | 'hard' | 'mixed'
+// What the user picked on the QuizDifficultyScreen.
+//   'easyMedium' — questions tagged easy OR medium (UI label "Easy").
+//   'hard'       — only the hard band (UI label "Medium").
+//   'mixed'      — every band including extreme (UI label "Hard").
+//   'easy' / 'medium' — kept for backward compatibility with the old API,
+//                       unused by the current UI but still valid filters.
+export type QuizDifficultyChoice = 'easy' | 'medium' | 'hard' | 'mixed' | 'easyMedium'
 
 // Picks N random questions from the bank with no repeats. If a difficulty
 // band is given, the pool is filtered to that band first; 'mixed' (or
@@ -1068,7 +1072,9 @@ export function sampleQuestions(
   const pool =
     difficulty === 'mixed'
       ? [...QUIZ_QUESTIONS]
-      : QUIZ_QUESTIONS.filter((q) => q.difficulty === difficulty)
+      : difficulty === 'easyMedium'
+        ? QUIZ_QUESTIONS.filter((q) => q.difficulty === 'easy' || q.difficulty === 'medium')
+        : QUIZ_QUESTIONS.filter((q) => q.difficulty === difficulty)
   const out: QuizQuestion[] = []
   const n = Math.min(count, pool.length)
   for (let i = 0; i < n; i++) {

@@ -12,6 +12,7 @@ export type ScreenName =
   | 'gameplay'
   | 'matchResult'
   | 'quizDifficulty'
+  | 'customizeQuiz'
   | 'quiz'
   | 'quizResult'
 

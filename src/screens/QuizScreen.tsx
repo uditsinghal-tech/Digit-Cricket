@@ -52,8 +52,13 @@ const QUESTION_TIMER_WARNING = 5
 type Props = {
   playerName: string
   // Which slice of the question bank to draw from. Picked one screen
-  // earlier on the QuizDifficultyScreen.
+  // earlier on the QuizDifficultyScreen. Ignored when `customQuestions`
+  // is supplied.
   difficulty: QuizDifficultyChoice
+  // Optional pre-loaded set of questions (used by the Customize Quiz
+  // flow after Gemini generates a tailored set). When provided we use
+  // these verbatim and skip the local-bank sample.
+  customQuestions?: QuizQuestion[]
   onFinish: (result: QuizResult) => void
   onBack: () => void
 }
@@ -68,18 +73,29 @@ const containerVariants = {
 // questions, shuffles each one's option order, and walks the user through
 // them one at a time with Previous / Next. The Finish Quiz button only
 // shows on the last card; before that the rightmost button is Next.
-export default function QuizScreen({ playerName, difficulty, onFinish, onBack }: Props) {
-  // Initial-session computation: pick 10 random questions matched to the
-  // chosen difficulty band ('mixed' draws from the whole bank) and shuffle
-  // each one's option slots. Held in useState (initialised lazily) so the
-  // same 10 questions persist across re-renders within the session.
-  const [entries, setEntries] = useState<QuizSessionEntry[]>(() =>
-    sampleQuestions(QUESTIONS_PER_QUIZ, difficulty).map((q) => ({
+export default function QuizScreen({
+  playerName,
+  difficulty,
+  customQuestions,
+  onFinish,
+  onBack,
+}: Props) {
+  // Initial-session computation. If a custom set was supplied (Customize
+  // Quiz path) use it verbatim; otherwise sample 10 random questions
+  // from the bundled bank matched to the chosen difficulty band.
+  // Held in useState (initialised lazily) so the same questions persist
+  // across re-renders within the session.
+  const [entries, setEntries] = useState<QuizSessionEntry[]>(() => {
+    const source =
+      customQuestions && customQuestions.length > 0
+        ? customQuestions
+        : sampleQuestions(QUESTIONS_PER_QUIZ, difficulty)
+    return source.map((q) => ({
       question: q,
       displayOrder: shuffleOptionOrder(),
       selectedDisplayIndex: null,
-    })),
-  )
+    }))
+  })
   const [currentIndex, setCurrentIndex] = useState(0)
   // Per-question countdown shown as a circular dial above the options.
   // Reset every time `currentIndex` changes (in the timer effect below).

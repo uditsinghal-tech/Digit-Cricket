@@ -3,6 +3,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { motion, type Variants } from 'framer-motion'
 import type { QuizDifficultyChoice } from '../quiz/questions'
 
@@ -15,6 +16,7 @@ import type { QuizDifficultyChoice } from '../quiz/questions'
 type Props = {
   playerName: string
   onSelect: (difficulty: QuizDifficultyChoice) => void
+  onCustomize: () => void
   onBack: () => void
 }
 
@@ -24,7 +26,7 @@ const containerVariants = {
   exit: { opacity: 0, y: -24, transition: { duration: 0.3, ease: 'easeIn' } },
 } satisfies Variants
 
-export default function QuizDifficultyScreen({ playerName, onSelect, onBack }: Props) {
+export default function QuizDifficultyScreen({ playerName, onSelect, onCustomize, onBack }: Props) {
   return (
     <motion.div
       key="quiz-difficulty-screen"
@@ -48,28 +50,40 @@ export default function QuizDifficultyScreen({ playerName, onSelect, onBack }: P
           <Stack spacing={1.5} sx={{ width: '100%' }}>
             <DifficultyButton
               label="Easy"
-              sub="Beginner-friendly rules & famous players"
+              sub="Beginner-friendly rules, famous players, World Cup history, IPL"
               color="success"
-              onClick={() => onSelect('easy')}
+              onClick={() => onSelect('easyMedium')}
             />
             <DifficultyButton
               label="Medium"
-              sub="World Cup history, IPL, modern records"
-              color="primary"
-              onClick={() => onSelect('medium')}
-            />
-            <DifficultyButton
-              label="Hard"
               sub="Deeper stats, specific matches, venues"
               color="warning"
               onClick={() => onSelect('hard')}
             />
             <DifficultyButton
-              label="Challenging"
+              label="Hard"
               sub="Mixed bag including niche / pre-2000 trivia"
               color="error"
               onClick={() => onSelect('mixed')}
             />
+            <Button
+              variant="contained"
+              color="secondary"
+              size="large"
+              startIcon={<AutoAwesomeIcon />}
+              onClick={onCustomize}
+              sx={{
+                py: 1.75,
+                flexDirection: 'column',
+                gap: 0.25,
+                textTransform: 'none',
+              }}
+            >
+              <Typography sx={{ fontSize: '1.1rem', fontWeight: 700 }}>Customize Quiz</Typography>
+              <Typography sx={{ fontSize: '0.78rem', opacity: 0.85 }}>
+                Pick count, scope and topics. Built fresh by Gemini.
+              </Typography>
+            </Button>
           </Stack>
 
           <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>

@@ -6,9 +6,10 @@ import StartChoiceScreen, { type StartChoice } from './screens/StartChoiceScreen
 import ModeSelectionScreen from './screens/ModeSelectionScreen'
 import MatchLengthScreen from './screens/MatchLengthScreen'
 import QuizDifficultyScreen from './screens/QuizDifficultyScreen'
+import CustomizeQuizScreen from './screens/CustomizeQuizScreen'
 import QuizScreen, { type QuizResult } from './screens/QuizScreen'
 import QuizResultScreen from './screens/QuizResultScreen'
-import type { QuizDifficultyChoice } from './quiz/questions'
+import type { QuizDifficultyChoice, QuizQuestion } from './quiz/questions'
 import MultiplayerLobbyScreen from './screens/MultiplayerLobbyScreen'
 import MultiplayerCoinTossScreen from './screens/MultiplayerCoinTossScreen'
 import MultiplayerBatOrBowlScreen from './screens/MultiplayerBatOrBowlScreen'
@@ -58,6 +59,11 @@ function App() {
   // so "Try Again" re-uses the same band without bouncing them back to the
   // difficulty picker. Cleared when the user goes Home.
   const [quizDifficulty, setQuizDifficulty] = useState<QuizDifficultyChoice>('mixed')
+  // Holds the questions Gemini generated for a Customize Quiz session.
+  // Reset to null whenever the user goes back to the difficulty picker
+  // so a Try Again on a custom quiz uses the same set, but going back
+  // and rebuilding starts from scratch.
+  const [customQuestions, setCustomQuestions] = useState<QuizQuestion[] | null>(null)
 
   // Pulled so the post-match handlers can branch on whether the player is
   // currently in a multiplayer room. `subscribe` is used to receive the
@@ -118,6 +124,23 @@ function App() {
   // Difficulty picked — stash it and start the quiz.
   const handleQuizDifficulty = (difficulty: QuizDifficultyChoice) => {
     setQuizDifficulty(difficulty)
+    setQuizResult(null)
+    setCustomQuestions(null)
+    setScreen('quiz')
+  }
+
+  // "Customize Quiz" picked on the difficulty screen — route to the
+  // form rather than launching a regular sampled quiz.
+  const handleCustomizeQuiz = () => {
+    setQuizResult(null)
+    setCustomQuestions(null)
+    setScreen('customizeQuiz')
+  }
+
+  // Gemini handed back the generated questions — stash them and route
+  // to the quiz screen which will use them instead of sampling.
+  const handleCustomQuizGenerated = (questions: QuizQuestion[]) => {
+    setCustomQuestions(questions)
     setQuizResult(null)
     setScreen('quiz')
   }
@@ -317,13 +340,23 @@ function App() {
             key="quiz-difficulty"
             playerName={playerName}
             onSelect={handleQuizDifficulty}
+            onCustomize={handleCustomizeQuiz}
             onBack={() => setScreen('startChoice')}
+          />
+        )}
+        {screen === 'customizeQuiz' && (
+          <CustomizeQuizScreen
+            key="customize-quiz"
+            playerName={playerName}
+            onGenerated={handleCustomQuizGenerated}
+            onBack={() => setScreen('quizDifficulty')}
           />
         )}
         {screen === 'quiz' && (
           <QuizScreen
-            key={`quiz-${quizDifficulty}`}
+            key={`quiz-${customQuestions ? 'custom' : quizDifficulty}`}
             playerName={playerName}
+            customQuestions={customQuestions ?? undefined}
             difficulty={quizDifficulty}
             onFinish={handleQuizFinish}
             onBack={() => setScreen('quizDifficulty')}
