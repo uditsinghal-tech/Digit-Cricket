@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -40,6 +40,15 @@ export type QuizResult = {
 
 const QUESTIONS_PER_QUIZ = 10
 
+// Per-question think-time. Mirrors the cricket match's ball timer: a
+// circular countdown that starts green and flips to red once the player
+// is in the final stretch. If the timer runs out before the player
+// commits to an answer (or while it sits on the current selection), the
+// quiz auto-advances to the next question, or finishes the quiz on the
+// last one.
+const QUESTION_TIMER_SECONDS = 15
+const QUESTION_TIMER_WARNING = 5
+
 type Props = {
   playerName: string
   // Which slice of the question bank to draw from. Picked one screen
@@ -72,6 +81,9 @@ export default function QuizScreen({ playerName, difficulty, onFinish, onBack }:
     })),
   )
   const [currentIndex, setCurrentIndex] = useState(0)
+  // Per-question countdown shown as a circular dial above the options.
+  // Reset every time `currentIndex` changes (in the timer effect below).
+  const [secondsLeft, setSecondsLeft] = useState<number>(QUESTION_TIMER_SECONDS)
 
   const current = entries[currentIndex]
   const isLast = currentIndex === entries.length - 1
@@ -114,6 +126,39 @@ export default function QuizScreen({ playerName, difficulty, onFinish, onBack }:
     [entries, onFinish],
   )
 
+  // Ref-mirror of the "what to do when the timer fires" callback. The
+  // setTimeout scheduled inside the timer effect runs 15 seconds later;
+  // by then the render that scheduled it is stale (entries / currentIndex
+  // may have moved on). Reading the latest behaviour out of a ref means
+  // the auto-advance always reflects the current question, not the one
+  // that was visible when the timer started.
+  const advanceRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    advanceRef.current = () => {
+      if (isLast) handleFinish()
+      else setCurrentIndex((i) => i + 1)
+    }
+  })
+
+  // Per-question countdown. Resets to QUESTION_TIMER_SECONDS whenever the
+  // visible question changes, ticks down once per second for display, and
+  // (independently) schedules a one-shot timeout that fires the auto-
+  // advance after the full window. The two are kept independent so a slow
+  // render doesn't delay the actual deadline.
+  useEffect(() => {
+    setSecondsLeft(QUESTION_TIMER_SECONDS)
+    const tick = window.setInterval(() => {
+      setSecondsLeft((s) => Math.max(s - 1, 0))
+    }, 1000)
+    const fire = window.setTimeout(() => {
+      advanceRef.current()
+    }, QUESTION_TIMER_SECONDS * 1000)
+    return () => {
+      window.clearInterval(tick)
+      window.clearTimeout(fire)
+    }
+  }, [currentIndex])
+
   return (
     <motion.div
       key="quiz-screen"
@@ -151,12 +196,15 @@ export default function QuizScreen({ playerName, difficulty, onFinish, onBack }:
               textAlign: 'left',
             }}
           >
-            <Typography
-              variant="caption"
-              sx={{ opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.08em' }}
-            >
-              {current.question.difficulty}
-            </Typography>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+              <Typography
+                variant="caption"
+                sx={{ opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.08em' }}
+              >
+                {current.question.difficulty}
+              </Typography>
+              <QuizTimer secondsLeft={secondsLeft} />
+            </Stack>
             <Typography variant="body1" sx={{ mt: 0.5, mb: 2, fontWeight: 600 }}>
               {current.question.question}
             </Typography>
@@ -220,6 +268,87 @@ export default function QuizScreen({ playerName, difficulty, onFinish, onBack }:
             Back to mode selection
           </Button>
         </Stack>
+      </Box>
+    </motion.div>
+  )
+}
+
+// Circular per-question countdown. SVG ring drains from full to empty as
+// the seconds tick down, the centre digit shows the remaining whole
+// seconds, and both flip from green to red once the player crosses into
+// the final QUESTION_TIMER_WARNING-second window. Mirrors the cricket
+// match's BallTimer in feel, smaller and lighter for the quiz screen.
+function QuizTimer({ secondsLeft }: { secondsLeft: number }) {
+  const isCritical = secondsLeft <= QUESTION_TIMER_WARNING
+  const color = isCritical ? '#ef4444' : '#22c55e'
+  const size = 52
+  const stroke = 4.5
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const progress = Math.max(0, Math.min(1, secondsLeft / QUESTION_TIMER_SECONDS))
+  const offset = circumference * (1 - progress)
+  return (
+    <motion.div
+      animate={isCritical ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+      transition={
+        isCritical
+          ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' }
+          : { duration: 0.2 }
+      }
+      style={{ position: 'relative', width: size, height: size, display: 'inline-block' }}
+      aria-label={`${secondsLeft} seconds left to answer`}
+    >
+      <svg width={size} height={size}>
+        {/* Track ring sitting underneath the live arc. */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(148, 163, 184, 0.22)"
+          strokeWidth={stroke}
+          fill="none"
+        />
+        {/* Live countdown arc. Rotated -90deg so the empty end starts at
+            12 o'clock and drains clockwise. */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={stroke}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{
+            transition: 'stroke-dashoffset 1s linear, stroke 0.2s ease',
+            filter: `drop-shadow(0 0 6px ${color}66)`,
+          }}
+        />
+      </svg>
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Typography
+          sx={{
+            fontFamily: 'monospace',
+            fontWeight: 800,
+            fontSize: '1rem',
+            color,
+            lineHeight: 1,
+            textShadow: `0 0 6px ${color}55`,
+            transition: 'color 0.2s ease, text-shadow 0.2s ease',
+          }}
+        >
+          {secondsLeft}
+        </Typography>
       </Box>
     </motion.div>
   )

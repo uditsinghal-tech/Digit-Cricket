@@ -64,11 +64,6 @@ const BALL_TIMER_SECONDS = 10
 // player feels the deadline approaching. 4s ≈ 40% of the window — late
 // enough to feel like a real warning, early enough to still react.
 const TIMER_WARNING_THRESHOLD = 4
-// Number of dots arranged around the clock boundary. One per second so the
-// dot-extinguish animation reads as a literal countdown — each tick visibly
-// loses a dot from the rim.
-const TIMER_DOTS = BALL_TIMER_SECONDS
-
 // Picks a face mood for one side based on the latest ball: batter smiles
 // on runs, frowns on out; bowler is the opposite. Neutral outside the reveal.
 function deriveMood(perspective: Innings, ctx: CricketContext, isRevealing: boolean): Mood {
@@ -308,30 +303,16 @@ export default function GameplayScreen({
     >
       <Box sx={{ width: '100%', maxWidth: 520, px: 2, py: 1.5 }}>
         <Stack spacing={1.75} alignItems="stretch">
-          <Box sx={{ position: 'relative' }}>
-            <Scoreboard
-              ctx={ctx}
-              playerName={playerName}
-              opponentName={opponentName}
-              playerMood={playerMood}
-              computerMood={computerMood}
-              playerBatting={playerBatting}
-            />
-            {showTimer && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  left: '100%',
-                  ml: 5,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  zIndex: 10,
-                }}
-              >
-                <BallTimer secondsLeft={secondsLeft} />
-              </Box>
-            )}
-          </Box>
+          <Scoreboard
+            ctx={ctx}
+            playerName={playerName}
+            opponentName={opponentName}
+            playerMood={playerMood}
+            computerMood={computerMood}
+            playerBatting={playerBatting}
+            showTimer={showTimer}
+            secondsLeft={secondsLeft}
+          />
 
           <PicksDisplay
             playerName={playerName}
@@ -387,6 +368,8 @@ function Scoreboard({
   playerMood,
   computerMood,
   playerBatting,
+  showTimer,
+  secondsLeft,
 }: {
   ctx: CricketContext
   playerName: string
@@ -394,6 +377,8 @@ function Scoreboard({
   playerMood: Mood
   computerMood: Mood
   playerBatting: boolean
+  showTimer: boolean
+  secondsLeft: number
 }) {
   const progress = Math.min(ctx.ballsThisInnings / ctx.ballsPerInnings, 1) * 100
   return (
@@ -426,9 +411,12 @@ function Scoreboard({
           accent="primary"
           isBatting={playerBatting}
         />
-        <Typography variant="h6" sx={{ opacity: 0.45 }}>
-          vs
-        </Typography>
+        <Stack alignItems="center" spacing={0.5} sx={{ mt: -3 }}>
+          {showTimer && <BallTimer secondsLeft={secondsLeft} />}
+          <Typography variant="h6" sx={{ opacity: 0.45 }}>
+            vs
+          </Typography>
+        </Stack>
         <PlayerCard
           label={opponentName}
           score={ctx.computerScore}
@@ -815,102 +803,83 @@ function SparkBurst() {
   )
 }
 
-// Animated per-ball countdown clock.
-//
-// Visual anatomy:
-//   - A circular rim of TIMER_DOTS dots (one per second). Dots that
-//     correspond to seconds the player still has are lit; the rest are
-//     dimmed out. So at T-10 all 10 dots glow, at T-1 only one does.
-//   - The central digit shows the same `secondsLeft` value numerically
-//     for a clear "this is how long you have" read.
-//   - Below TIMER_WARNING_THRESHOLD seconds the entire palette flips from
-//     green to red — both the rim dots and the central digit — and the
-//     whole thing pulses gently via framer-motion to draw the eye.
-//
-// All visual state derives purely from the `secondsLeft` prop — no
-// internal timer state. The owning component (GameplayScreen) holds the
-// real countdown logic and feeds the latest value down on every tick.
+// Per-ball countdown clock, drawn in the same compact style as the quiz
+// timer: a circular track ring + a live arc that drains clockwise as the
+// seconds tick down, with a monospace digit in the centre. Stays green
+// while there's slack and flips to red once the player hits
+// TIMER_WARNING_THRESHOLD seconds, with a subtle scale pulse to draw the
+// eye. All visual state derives purely from the `secondsLeft` prop —
+// the owning GameplayScreen holds the real countdown logic and feeds the
+// latest value down on every tick.
 function BallTimer({ secondsLeft }: { secondsLeft: number }) {
-  // Critical phase: rim + digit go red, container pulses. Triggered the
-  // moment the threshold is crossed, not when the timer hits zero, so the
-  // player feels the warning before the deadline lands.
   const isCritical = secondsLeft <= TIMER_WARNING_THRESHOLD
-  // Box size in CSS pixels. The dots are positioned with absolute math
-  // against this, so changing the constant resizes everything cleanly.
-  const size = 110
-  // Where the dots live around the rim. Slightly inset from the edge so
-  // the dot's stroke / glow doesn't clip outside the container.
-  const radius = size / 2 - 6
-
-  // Hex palettes for the two phases. Pulled out so the JSX stays terse
-  // and the green↔red flip happens in a single ternary at use sites.
-  const litColor = isCritical ? '#ef4444' : '#22c55e'
-  const dimColor = 'rgba(148, 163, 184, 0.18)'
-
+  const color = isCritical ? '#ef4444' : '#22c55e'
+  const size = 52
+  const stroke = 4.5
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const progress = Math.max(0, Math.min(1, secondsLeft / BALL_TIMER_SECONDS))
+  const offset = circumference * (1 - progress)
   return (
     <motion.div
-      // Container-level pulse during the critical phase. Subtle (1 → 1.07
-      // → 1) so it reads as urgency without becoming distracting.
-      animate={isCritical ? { scale: [1, 1.07, 1] } : { scale: 1 }}
+      animate={isCritical ? { scale: [1, 1.08, 1] } : { scale: 1 }}
       transition={
-        isCritical ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }
+        isCritical
+          ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' }
+          : { duration: 0.2 }
       }
-      style={{
-        width: size,
-        height: size,
-        position: 'relative',
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
+      style={{ position: 'relative', width: size, height: size, display: 'inline-block' }}
       aria-label={`${secondsLeft} seconds left to pick`}
     >
-      {Array.from({ length: TIMER_DOTS }).map((_, i) => {
-        // Lay the dots out around the circle. Subtract π/2 so dot 0 sits
-        // at 12 o'clock (top) and they rotate clockwise from there.
-        const angle = (i / TIMER_DOTS) * Math.PI * 2 - Math.PI / 2
-        const cx = size / 2 + Math.cos(angle) * radius
-        const cy = size / 2 + Math.sin(angle) * radius
-        // A dot is "lit" if its index falls within the remaining-seconds
-        // window. So as the timer ticks, the highest-indexed dot dims
-        // first, then the next, etc., giving the visible countdown.
-        const isLit = i < secondsLeft
-        return (
-          <Box
-            key={i}
-            sx={{
-              position: 'absolute',
-              left: cx - 4,
-              top: cy - 4,
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              backgroundColor: isLit ? litColor : dimColor,
-              // Lit dots get a soft glow so the rim "shines"; dim dots
-              // stay flat so the contrast is obvious at a glance.
-              boxShadow: isLit ? `0 0 6px ${litColor}` : 'none',
-              // Smooth the colour change so the green→red transition at
-              // the threshold reads as a flip, not a flicker.
-              transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
-            }}
-          />
-        )
-      })}
-      <Typography
+      <svg width={size} height={size}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(148, 163, 184, 0.22)"
+          strokeWidth={stroke}
+          fill="none"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={stroke}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{
+            transition: 'stroke-dashoffset 1s linear, stroke 0.2s ease',
+            filter: `drop-shadow(0 0 6px ${color}66)`,
+          }}
+        />
+      </svg>
+      <Box
         sx={{
-          fontFamily: 'monospace',
-          fontSize: '2rem',
-          fontWeight: 800,
-          color: litColor,
-          lineHeight: 1,
-          // Soft text-glow matches the rim, ties the digit visually to
-          // the surrounding dots.
-          textShadow: `0 0 8px ${litColor}66`,
-          transition: 'color 0.2s ease, text-shadow 0.2s ease',
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
-        {secondsLeft}
-      </Typography>
+        <Typography
+          sx={{
+            fontFamily: 'monospace',
+            fontWeight: 800,
+            fontSize: '1rem',
+            color,
+            lineHeight: 1,
+            textShadow: `0 0 6px ${color}55`,
+            transition: 'color 0.2s ease, text-shadow 0.2s ease',
+          }}
+        >
+          {secondsLeft}
+        </Typography>
+      </Box>
     </motion.div>
   )
 }
