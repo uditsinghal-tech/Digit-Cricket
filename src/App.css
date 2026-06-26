@@ -47,7 +47,35 @@ body[data-stadium-mode='day'] .room-code-box {
   border-color: #a855f7;
 }
 body[data-stadium-mode='day'] .MuiButton-root.purple-accent {
-  color: #6b21a8;
-  border-color: #6b21a8;
+  color: #3b0764;
+  border-color: #3b0764;
+  border-width: 2px;
+  font-weight: 700;
+}
+
+/* Day-mode contrast pass for the in-match overlay panels (Voice + Chat).
+   The light sky behind them washes out the default translucent dark
+   surfaces and faint slate borders, so in day mode we swap to a near-
+   opaque dark background, a stronger border, and a soft shadow so the
+   panels read as a clearly elevated card against the bright backdrop. */
+body[data-stadium-mode='day'] .match-panel {
+  background: rgba(15, 23, 42, 0.92) !important;
+  border-color: rgba(15, 23, 42, 0.85) !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.35);
+}
+body[data-stadium-mode='day'] .match-panel .MuiButton-root,
+body[data-stadium-mode='day'] .match-panel .MuiTypography-root {
+  text-shadow: none;
+}
+/* Inside the dark match panels the contained-button labels read
+   white-on-color fine, but outlined / text buttons need their text and
+   border to stay bright since we forced the panel background dark. */
+body[data-stadium-mode='day'] .match-panel .MuiButton-outlined,
+body[data-stadium-mode='day'] .match-panel .MuiButton-text {
+  color: #f8fafc;
+  border-color: rgba(248, 250, 252, 0.55);
+}
+body[data-stadium-mode='day'] .match-panel .MuiIconButton-root {
+  color: #f8fafc;
 }
 

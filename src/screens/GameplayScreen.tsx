@@ -8,12 +8,17 @@ import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
+import TextField from '@mui/material/TextField'
+import Badge from '@mui/material/Badge'
 import SportsCricketIcon from '@mui/icons-material/SportsCricket'
 import SportsBaseballIcon from '@mui/icons-material/SportsBaseball'
 import CallIcon from '@mui/icons-material/Call'
 import CallEndIcon from '@mui/icons-material/CallEnd'
 import MicIcon from '@mui/icons-material/Mic'
 import MicOffIcon from '@mui/icons-material/MicOff'
+import ChatIcon from '@mui/icons-material/Chat'
+import CloseIcon from '@mui/icons-material/Close'
+import SendIcon from '@mui/icons-material/Send'
 import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import { useMachine } from '@xstate/react'
 import { cricketMachine, deriveWinner, type CricketContext } from '../game/machine'
@@ -21,6 +26,8 @@ import AnimatedFace, { type Mood } from '../components/AnimatedFace'
 import { useSounds } from '../audio/useSounds'
 import { useStadiumReaction } from '../stadium/useStadiumReaction'
 import { useMultiplayer, type VoiceCallStatus } from '../multiplayer/useMultiplayer'
+import { CHAT_MESSAGE_MAX_LENGTH } from '../multiplayer/messages'
+import { sanitizeChatMessage } from '../multiplayer/chatSafety'
 import {
   BALL_NUMBERS,
   type BallEvent,
@@ -145,16 +152,37 @@ export default function GameplayScreen({
     opp: BallNumber | null
   }>({ local: null, opp: null })
 
-  // Subscribes to inbound PICK messages in multiplayer mode and stashes
-  // the opponent's pick locally. Auto-unsubscribes on unmount.
+  // --- Multiplayer text chat ---
+  // Local mirror of every chat message exchanged this match, in send
+  // order. `from === 'me'` for messages this peer typed, `from === 'opp'`
+  // for incoming. Capped at CHAT_HISTORY_CAP entries so a long match
+  // can't grow the chat array unbounded.
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatUnread, setChatUnread] = useState(0)
+
+  // Subscribes to inbound PICK + CHAT messages in multiplayer mode and
+  // stashes them locally. Auto-unsubscribes on unmount.
   useEffect(() => {
     if (!isMultiplayer) return
     return subscribe((msg) => {
       if (msg.type === 'PICK') {
         setPendingPicks((prev) => ({ ...prev, opp: msg.number }))
+      } else if (msg.type === 'CHAT') {
+        // Defence in depth: even though the sender sanitises before
+        // putting the message on the wire, run the full safety
+        // pipeline again on receive. A malicious peer could ship a
+        // crafted payload that bypasses their local filter.
+        const text = sanitizeChatMessage(msg.text, CHAT_MESSAGE_MAX_LENGTH)
+        if (!text) return
+        setChatHistory((prev) => capChatHistory([...prev, { from: 'opp', text, ts: msg.ts }]))
+        // Only bump the unread counter when the panel is closed —
+        // an already-open panel scrolls to the new message instead.
+        setChatUnread((u) => (chatOpen ? u : u + 1))
       }
     })
-  }, [isMultiplayer, subscribe])
+  }, [isMultiplayer, subscribe, chatOpen])
 
   // Once we have both picks AND the machine is ready for a new ball,
   // dispatch a single PICK with both picks. The machine processes the ball
@@ -165,6 +193,30 @@ export default function GameplayScreen({
     if (!isAwaiting) return
     send({ type: 'PICK', number: pendingPicks.local, opponentPick: pendingPicks.opp })
   }, [isMultiplayer, pendingPicks, isAwaiting, send])
+
+  // Send the current chat draft to the opponent and append to local
+  // history. Runs the full safety pipeline first (control-character
+  // strip, bidi-trick strip, whitespace collapse, length cap, profanity
+  // mask). No-op when the cleaned draft is empty.
+  const handleSendChat = () => {
+    if (!isMultiplayer) return
+    const cleaned = sanitizeChatMessage(chatDraft, CHAT_MESSAGE_MAX_LENGTH)
+    if (!cleaned) {
+      setChatDraft('')
+      return
+    }
+    const ts = Date.now()
+    sendNetwork({ type: 'CHAT', text: cleaned, ts })
+    setChatHistory((prev) => capChatHistory([...prev, { from: 'me', text: cleaned, ts }]))
+    setChatDraft('')
+  }
+
+  // Opens the chat panel and clears the unread badge so reopening is a
+  // no-op once the user has seen the new messages.
+  const handleOpenChat = () => {
+    setChatOpen(true)
+    setChatUnread(0)
+  }
 
   // After a ball is processed the machine increments `ballsThisInnings` (or
   // bumps `inningsNumber` at the innings switch). Either change marks the
@@ -363,23 +415,55 @@ export default function GameplayScreen({
               </Typography>
             </Stack>
           )}
-
-          {isMultiplayer && (
-            <VoiceCallPanel
-              opponentName={opponentName}
-              voiceStatus={voiceStatus}
-              voiceSupported={voiceSupported}
-              voiceError={voiceError}
-              isMuted={isMuted}
-              onStart={() => void startCall()}
-              onAccept={() => void acceptCall()}
-              onReject={rejectCall}
-              onEnd={endCall}
-              onToggleMute={toggleMute}
-            />
-          )}
         </Stack>
       </Box>
+
+      {/* Voice + chat panels, fixed to the top-right corner just under
+          the row of toggle icons (Stats / Info / Theme / Mute). Hidden
+          entirely in singleplayer; mobile / narrow viewports drop them
+          into a regular flow at the bottom of the screen via the
+          responsive style. */}
+      {isMultiplayer && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: '50%',
+            right: 12,
+            transform: 'translateY(-50%)',
+            width: 280,
+            maxWidth: 'calc(100vw - 24px)',
+            zIndex: 9,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.5,
+          }}
+        >
+          <VoiceCallPanel
+            opponentName={opponentName}
+            voiceStatus={voiceStatus}
+            voiceSupported={voiceSupported}
+            voiceError={voiceError}
+            isMuted={isMuted}
+            onStart={() => void startCall()}
+            onAccept={() => void acceptCall()}
+            onReject={rejectCall}
+            onEnd={endCall}
+            onToggleMute={toggleMute}
+          />
+
+          <ChatPanel
+            opponentName={opponentName}
+            isOpen={chatOpen}
+            unread={chatUnread}
+            history={chatHistory}
+            draft={chatDraft}
+            onDraftChange={setChatDraft}
+            onOpen={handleOpenChat}
+            onClose={() => setChatOpen(false)}
+            onSend={handleSendChat}
+          />
+        </Box>
+      )}
     </motion.div>
   )
 }
@@ -918,6 +1002,193 @@ function BallTimer({ secondsLeft }: { secondsLeft: number }) {
   )
 }
 
+// One entry in the multiplayer text-chat history. Kept lightweight on
+// purpose — the chat is a transient in-match utility, not a stored log.
+type ChatMessage = { from: 'me' | 'opp'; text: string; ts: number }
+
+// Hard cap on how many chat entries we keep in memory. Long enough to
+// scroll back through a match, short enough that a malicious peer can't
+// grow the array unbounded.
+const CHAT_HISTORY_CAP = 100
+
+// Drops oldest entries when the history would exceed the cap.
+function capChatHistory(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= CHAT_HISTORY_CAP) return messages
+  return messages.slice(messages.length - CHAT_HISTORY_CAP)
+}
+
+// Collapsible text-chat panel. Rides alongside the voice-call panel at
+// the bottom of the gameplay column. Closed state is a single button
+// with an unread badge; opened state is a small chat window with the
+// message history (auto-scrolled to bottom), an input field, and a
+// Send button. Messages are rendered through React Typography so HTML
+// from the peer is escaped — a malicious peer can't inject markup.
+function ChatPanel({
+  opponentName,
+  isOpen,
+  unread,
+  history,
+  draft,
+  onDraftChange,
+  onOpen,
+  onClose,
+  onSend,
+}: {
+  opponentName: string
+  isOpen: boolean
+  unread: number
+  history: ChatMessage[]
+  draft: string
+  onDraftChange: (next: string) => void
+  onOpen: () => void
+  onClose: () => void
+  onSend: () => void
+}) {
+  // Scroll the message list to the bottom whenever a new message lands
+  // or the panel opens. Plain DOM API because the message list is a
+  // direct child of a fixed-height scrollable Box.
+  const listEndRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!isOpen) return
+    listEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [isOpen, history.length])
+
+  if (!isOpen) {
+    return (
+      <Stack direction="row" justifyContent="center">
+        <Tooltip title={`Chat with ${opponentName}`} arrow>
+          <Badge color="error" badgeContent={unread} max={9} overlap="circular">
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ChatIcon />}
+              onClick={onOpen}
+              className="purple-accent"
+            >
+              Chat
+            </Button>
+          </Badge>
+        </Tooltip>
+      </Stack>
+    )
+  }
+
+  return (
+    <Box
+      className="match-panel"
+      sx={{
+        border: '1px solid rgba(148, 163, 184, 0.25)',
+        borderRadius: 2,
+        background: 'rgba(15, 23, 42, 0.55)',
+        backdropFilter: 'blur(6px)',
+        overflow: 'hidden',
+      }}
+    >
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ px: 1.25, py: 0.6, borderBottom: '1px solid rgba(148,163,184,0.18)' }}
+      >
+        <Stack direction="row" spacing={0.75} alignItems="center">
+          <ChatIcon fontSize="small" sx={{ opacity: 0.85 }} />
+          <Typography variant="caption" sx={{ fontWeight: 700, letterSpacing: '0.06em' }}>
+            CHAT · {opponentName.toUpperCase()}
+          </Typography>
+        </Stack>
+        <IconButton size="small" onClick={onClose} aria-label="Close chat">
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Stack>
+
+      <Box
+        sx={{
+          maxHeight: 160,
+          minHeight: 80,
+          overflowY: 'auto',
+          px: 1.25,
+          py: 0.75,
+        }}
+      >
+        {history.length === 0 ? (
+          <Typography variant="caption" sx={{ opacity: 0.55, fontStyle: 'italic' }}>
+            No messages yet. Say hi to {opponentName}!
+          </Typography>
+        ) : (
+          history.map((msg, idx) => <ChatBubble key={`${msg.ts}-${idx}`} msg={msg} />)
+        )}
+        <div ref={listEndRef} />
+      </Box>
+
+      <Stack
+        direction="row"
+        spacing={0.75}
+        alignItems="center"
+        sx={{ px: 1, py: 0.75, borderTop: '1px solid rgba(148,163,184,0.18)' }}
+      >
+        <TextField
+          size="small"
+          fullWidth
+          variant="outlined"
+          placeholder="Type a message…"
+          value={draft}
+          onChange={(e) => onDraftChange(e.target.value.slice(0, CHAT_MESSAGE_MAX_LENGTH))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              onSend()
+            }
+          }}
+          slotProps={{ htmlInput: { maxLength: CHAT_MESSAGE_MAX_LENGTH } }}
+          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+        />
+        <IconButton
+          color="secondary"
+          onClick={onSend}
+          disabled={draft.trim().length === 0}
+          aria-label="Send message"
+        >
+          <SendIcon fontSize="small" />
+        </IconButton>
+      </Stack>
+    </Box>
+  )
+}
+
+// One chat bubble. Local messages align right with the primary accent;
+// opponent messages align left in slate. Text is rendered through
+// Typography so any HTML payload from a hostile peer is escaped at the
+// React boundary.
+function ChatBubble({ msg }: { msg: ChatMessage }) {
+  const isMe = msg.from === 'me'
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: isMe ? 'flex-end' : 'flex-start',
+        mb: 0.5,
+      }}
+    >
+      <Box
+        sx={{
+          maxWidth: '75%',
+          px: 1,
+          py: 0.4,
+          borderRadius: 1.5,
+          background: isMe ? 'rgba(56, 189, 248, 0.16)' : 'rgba(148, 163, 184, 0.12)',
+          border: isMe
+            ? '1px solid rgba(56, 189, 248, 0.4)'
+            : '1px solid rgba(148, 163, 184, 0.25)',
+        }}
+      >
+        <Typography variant="body2" sx={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+          {msg.text}
+        </Typography>
+      </Box>
+    </Box>
+  )
+}
+
 // Voice-call control row. Shown only in multiplayer matches, lives at the
 // bottom of the gameplay column. Renders four mutually-exclusive states:
 //   - idle      → a single "Call" button (or a "voice not supported" hint
@@ -957,6 +1228,7 @@ function VoiceCallPanel({
 
   return (
     <Stack
+      className="match-panel"
       direction="row"
       spacing={1}
       alignItems="center"

@@ -29,6 +29,16 @@ export type NetworkMessage =
   // side enters a "waiting for opponent" state; once both peers have sent
   // REMATCH_REQUEST, both navigate back to the multiplayer coin toss.
   | { type: 'REMATCH_REQUEST' }
+  // Free-form text chat between the two peers during a match. `text` is
+  // trimmed and capped at CHAT_MESSAGE_MAX_LENGTH on the sender side; the
+  // receiver renders it inside React Typography so HTML / scripts can't
+  // execute. `ts` is the sender's wall-clock time at send-moment, used
+  // only for ordering the local history.
+  | { type: 'CHAT'; text: string; ts: number }
+
+// Max characters allowed in a single chat message. Caps spam and keeps
+// the rendered bubble from blowing out the chat panel width.
+export const CHAT_MESSAGE_MAX_LENGTH = 200
 
 // Convenience type for anyone subscribing to incoming messages.
 export type MessageHandler = (msg: NetworkMessage) => void
