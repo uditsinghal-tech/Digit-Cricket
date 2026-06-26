@@ -21,6 +21,7 @@ import MuteToggle from './components/MuteToggle'
 import DayNightToggle from './components/DayNightToggle'
 import HowToPlayButton from './components/HowToPlayButton'
 import StatsButton from './components/StatsButton'
+import CricketHistoryButton from './components/CricketHistoryButton'
 import { recordMatch, recordQuiz } from './stats/playerStats'
 import { useMultiplayer } from './multiplayer/useMultiplayer'
 import type { NetworkMessage } from './multiplayer/messages'
@@ -255,6 +256,7 @@ function App() {
   return (
     <Box className="app-shell">
       <StadiumBackground />
+      <CricketHistoryButton />
       <StatsButton />
       <HowToPlayButton />
       <DayNightToggle />
