@@ -15,6 +15,22 @@ import { MAX_PLAYER_NAME_LENGTH, MIN_PLAYER_NAME_LENGTH } from '../game/types'
 // out of the scoreboard / result UI.
 const ALLOWED_NAME_PATTERN = /^[\p{L}\p{N} ]*$/u
 
+// localStorage key used to remember the last name the player entered, so
+// the welcome screen prefills it next time. Editable — any change here is
+// persisted on submit.
+const NAME_STORAGE_KEY = 'digit-cricket:player-name'
+
+// Reads the previously-saved name from localStorage, falling back to ''
+// when storage is unavailable (private browsing, server-side render, etc.)
+// or when nothing was saved yet.
+function readSavedName(): string {
+  try {
+    return localStorage.getItem(NAME_STORAGE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 type Props = {
   onSubmit: (name: string) => void
 }
@@ -28,7 +44,10 @@ const containerVariants = {
 // Welcome / name entry. Trims input, blocks empty names and overlong ones,
 // and only shows the error message after the field has been touched.
 export default function PlayerNameScreen({ onSubmit }: Props) {
-  const [value, setValue] = useState('')
+  // Lazy useState initialiser so localStorage is read once on mount.
+  // If the player has played before their last name pre-populates the
+  // field; they can still edit it freely.
+  const [value, setValue] = useState<string>(readSavedName)
   const [touched, setTouched] = useState(false)
 
   const trimmed = value.trim()
@@ -52,11 +71,19 @@ export default function PlayerNameScreen({ onSubmit }: Props) {
           : ' '
 
   // Form submit handler. Marks the field as touched so errors are allowed to
-  // show, blocks if invalid, otherwise hands the trimmed name to the parent.
+  // show, blocks if invalid, otherwise persists the trimmed name to
+  // localStorage (so it prefills next time, even if it changed) and hands
+  // it to the parent. Storage errors are swallowed silently — persistence
+  // is a nice-to-have, not blocking.
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setTouched(true)
     if (isInvalid) return
+    try {
+      localStorage.setItem(NAME_STORAGE_KEY, trimmed)
+    } catch {
+      // ignore — private mode, quota, etc.
+    }
     onSubmit(trimmed)
   }
 

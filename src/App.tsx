@@ -20,6 +20,8 @@ import StadiumBackground from './components/StadiumBackground'
 import MuteToggle from './components/MuteToggle'
 import DayNightToggle from './components/DayNightToggle'
 import HowToPlayButton from './components/HowToPlayButton'
+import StatsButton from './components/StatsButton'
+import { recordMatch, recordQuiz } from './stats/playerStats'
 import { useMultiplayer } from './multiplayer/useMultiplayer'
 import type { NetworkMessage } from './multiplayer/messages'
 import type {
@@ -119,9 +121,16 @@ function App() {
     setScreen('quiz')
   }
 
-  // Quiz finished — stash the 10-question summary and route to the result
-  // screen. The user can then Try Again or go Home.
+  // Quiz finished — stash the 10-question summary, persist the per-session
+  // totals into the player's stats (so the My-stats dialog reflects them),
+  // and route to the result screen.
   const handleQuizFinish = (result: QuizResult) => {
+    const attempted = result.entries.filter((e) => e.selectedDisplayIndex !== null).length
+    recordQuiz({
+      seen: result.totalQuestions,
+      attempted,
+      correct: result.correctCount,
+    })
     setQuizResult(result)
     setScreen('quizResult')
   }
@@ -192,8 +201,26 @@ function App() {
     setScreen('gameplay')
   }
 
-  // Stores the final match result and advances to the result screen.
+  // Stores the final match result, persists the played-won-tied tally
+  // (plus runs / balls faced / highest score) into the player's stats so
+  // the My-stats dialog reflects it, and advances to the result screen.
+  // The vs-friend flag is read from the current screen — at this call
+  // site `screen` is still the gameplay variant.
   const handleMatchComplete = (result: MatchResult) => {
+    const playerEvents = result.events.filter((e) => e.batter === 'player')
+    const playerBallsFaced = playerEvents.length
+    const playerFours = playerEvents.filter((e) => e.runs === 4).length
+    const playerSixes = playerEvents.filter((e) => e.runs === 6).length
+    recordMatch({
+      vsFriend: screen === 'multiplayerGameplay',
+      ballsPerInnings: result.ballsPerInnings,
+      totalInnings: result.totalInnings,
+      winner: result.winner,
+      playerScore: result.playerScore,
+      playerBallsFaced,
+      playerFours,
+      playerSixes,
+    })
     setMatchResult(result)
     setScreen('matchResult')
   }
@@ -228,6 +255,7 @@ function App() {
   return (
     <Box className="app-shell">
       <StadiumBackground />
+      <StatsButton />
       <HowToPlayButton />
       <DayNightToggle />
       <MuteToggle />
