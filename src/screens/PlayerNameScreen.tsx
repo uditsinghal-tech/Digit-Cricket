@@ -76,11 +76,12 @@ export default function PlayerNameScreen({ onSubmit }: Props) {
           width: '100%',
           maxWidth: 480,
           px: 3,
-          py: 6,
+          pt: 1,
+          pb: 2,
           textAlign: 'center',
         }}
       >
-        <Stack spacing={4} alignItems="center">
+        <Stack spacing={1.5} alignItems="center">
           <BouncingBatBall />
 
           <Stack spacing={1} alignItems="center">
@@ -134,8 +135,8 @@ function BouncingBatBall() {
       className="welcome-logo"
       sx={{
         position: 'relative',
-        width: 200,
-        height: 160,
+        width: 190,
+        height: 145,
         // Soft ground shadow underneath the bat for a sense of "floor".
         '&::after': {
           content: '""',
