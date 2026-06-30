@@ -299,7 +299,8 @@ function App() {
           textShadow: '0 1px 2px rgba(0, 0, 0, 0.6)',
         }}
       >
-        ⚡ May the digits be in your favor | Developed by{' '}
+        ⚡ May the digits be in your favor | 
+        {/* Developed by{' '}
         <a
           href="https://www.linkedin.com/in/udit-singhal2404/"
           target="_blank"
@@ -311,7 +312,7 @@ function App() {
           }}
         >
           Udit Singhal
-        </a>{' '}
+        </a>{' '} */}
         | Powered by Numbers 📊
       </Box>
       <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
