@@ -28,7 +28,7 @@ const containerVariants = {
 } satisfies Variants
 
 export default function QuizResultScreen({ result, onTryAgain, onHome }: Props) {
-  const { entries, totalQuestions, correctCount } = result
+  const { entries, totalQuestions, correctCount, correctFlags } = result
   const percentage = Math.round((correctCount / totalQuestions) * 100)
   const headline = headlineFor(percentage)
 
@@ -60,8 +60,7 @@ export default function QuizResultScreen({ result, onTryAgain, onHome }: Props) 
               const { question, displayOrder, selectedDisplayIndex } = entry
               const wasSelected = selectedDisplayIndex !== null
               const selectedOriginalIdx = wasSelected ? displayOrder[selectedDisplayIndex] : -1
-              const isCorrect =
-                wasSelected && selectedOriginalIdx === question.correctIndex
+              const isCorrect = correctFlags[idx] ?? false
               const selectedText = wasSelected
                 ? question.options[selectedOriginalIdx]
                 : 'Skipped (no answer)'

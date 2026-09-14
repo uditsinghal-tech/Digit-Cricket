@@ -1,4 +1,5 @@
 export type ScreenName =
+  | 'auth'
   | 'playerName'
   | 'startChoice'
   | 'modeSelect'
@@ -11,10 +12,12 @@ export type ScreenName =
   | 'batOrBowl'
   | 'gameplay'
   | 'matchResult'
+  | 'quizMode'
   | 'quizDifficulty'
   | 'customizeQuiz'
   | 'quiz'
   | 'quizResult'
+  | 'contestResult'
 
 // Singleplayer (vs computer) or multiplayer (vs friend over WebRTC).
 export type GameMode = 'singleplayer' | 'multiplayer'

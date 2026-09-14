@@ -27,20 +27,8 @@ dist-ssr
 bugfix.md
 timer.md
 
-# Ignore version notes
-version1.md
-version2.md
-version3.md
-version4.md
-version5.md
-version6.md
-version7.md
-version8.md
-version9.md
-version10.md
+# Ignore Markdown documentation and version notes
+*.md
 
-version11.md
 .env.local
-version12.md
-version13.md
 

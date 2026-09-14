@@ -16,7 +16,9 @@ export type QuizQuestion = {
   difficulty: Difficulty
   question: string
   options: [string, string, string, string]
-  correctIndex: 0 | 1 | 2 | 3
+  // Absent for contest questions — those are graded server-side on submit
+  // so the answer key never reaches the client before the quiz is over.
+  correctIndex?: 0 | 1 | 2 | 3
 }
 
 export const QUIZ_QUESTIONS: QuizQuestion[] = [

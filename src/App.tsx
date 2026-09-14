@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import { AnimatePresence } from 'framer-motion'
+import AuthScreen from './screens/AuthScreen'
 import PlayerNameScreen from './screens/PlayerNameScreen'
 import StartChoiceScreen, { type StartChoice } from './screens/StartChoiceScreen'
 import ModeSelectionScreen from './screens/ModeSelectionScreen'
 import MatchLengthScreen from './screens/MatchLengthScreen'
+import QuizModeScreen from './screens/QuizModeScreen'
 import QuizDifficultyScreen from './screens/QuizDifficultyScreen'
 import CustomizeQuizScreen from './screens/CustomizeQuizScreen'
 import QuizScreen, { type QuizResult } from './screens/QuizScreen'
 import QuizResultScreen from './screens/QuizResultScreen'
+import ContestResultScreen from './screens/ContestResultScreen'
 import type { QuizDifficultyChoice, QuizQuestion } from './quiz/questions'
 import MultiplayerLobbyScreen from './screens/MultiplayerLobbyScreen'
 import MultiplayerCoinTossScreen from './screens/MultiplayerCoinTossScreen'
@@ -22,8 +25,10 @@ import MuteToggle from './components/MuteToggle'
 import DayNightToggle from './components/DayNightToggle'
 import HowToPlayButton from './components/HowToPlayButton'
 import StatsButton from './components/StatsButton'
+import LeaderboardButton from './components/LeaderboardButton'
 import CricketHistoryButton from './components/CricketHistoryButton'
 import { recordMatch, recordQuiz } from './stats/playerStats'
+import type { ContestGrade } from './api/client'
 import { useMultiplayer } from './multiplayer/useMultiplayer'
 import type { NetworkMessage } from './multiplayer/messages'
 import type {
@@ -42,7 +47,10 @@ import './App.css'
 // (player name, match length, toss outcome, role decision, final result),
 // and animates between screens with AnimatePresence.
 function App() {
-  const [screen, setScreen] = useState<ScreenName>('playerName')
+  const [screen, setScreen] = useState<ScreenName>('auth')
+  // Email the player authenticated with. Identity used for the server-side
+  // quiz stats endpoints. Empty until they sign in / sign up.
+  const [email, setEmail] = useState('')
   const [playerName, setPlayerName] = useState('')
   const [ballsPerInnings, setBallsPerInnings] = useState<BallsPerInnings | null>(null)
   // Total innings the match runs for. Defaults to 2 (standard format).
@@ -64,6 +72,11 @@ function App() {
   // so a Try Again on a custom quiz uses the same set, but going back
   // and rebuilding starts from scratch.
   const [customQuestions, setCustomQuestions] = useState<QuizQuestion[] | null>(null)
+  // Coupon code for the current contest quiz, or null for a non-contest
+  // run. Its presence tells QuizScreen to grade server-side on Finish.
+  const [contestCoupon, setContestCoupon] = useState<string | null>(null)
+  // Server-graded contest summary, shown on the contest result screen.
+  const [contestGrade, setContestGrade] = useState<ContestGrade | null>(null)
 
   // Pulled so the post-match handlers can branch on whether the player is
   // currently in a multiplayer room. `subscribe` is used to receive the
@@ -103,6 +116,13 @@ function App() {
     }
   }, [multiplayerStatus, screen])
 
+  // Signup/login succeeded — stash the email (used as the quiz-stats
+  // identity) and move on to name entry.
+  const handleAuthed = (authedEmail: string) => {
+    setEmail(authedEmail)
+    setScreen('playerName')
+  }
+
   // Saves the entered name and advances to the new start-choice screen
   // (Play Cricket / Quiz). The cricket flow continues from there.
   const handleNameSubmit = (name: string) => {
@@ -117,8 +137,25 @@ function App() {
       setScreen('modeSelect')
     } else {
       setQuizResult(null)
-      setScreen('quizDifficulty')
+      setScreen('quizMode')
     }
+  }
+
+  // "Play For Fun" on the quiz-mode screen — the existing sampled-quiz
+  // path, starting from the difficulty picker.
+  const handlePlayForFun = () => {
+    setQuizResult(null)
+    setScreen('quizDifficulty')
+  }
+
+  // Contest coupon validated — the backend returned the question set, so
+  // run it verbatim through QuizScreen (same path as a custom quiz). The
+  // coupon is held so QuizScreen can submit answers for server grading.
+  const handleContestStart = (questions: QuizQuestion[], couponCode: string) => {
+    setCustomQuestions(questions)
+    setContestCoupon(couponCode)
+    setQuizResult(null)
+    setScreen('quiz')
   }
 
   // Difficulty picked — stash it and start the quiz.
@@ -126,6 +163,7 @@ function App() {
     setQuizDifficulty(difficulty)
     setQuizResult(null)
     setCustomQuestions(null)
+    setContestCoupon(null)
     setScreen('quiz')
   }
 
@@ -141,13 +179,14 @@ function App() {
   // to the quiz screen which will use them instead of sampling.
   const handleCustomQuizGenerated = (questions: QuizQuestion[]) => {
     setCustomQuestions(questions)
+    setContestCoupon(null)
     setQuizResult(null)
     setScreen('quiz')
   }
 
-  // Quiz finished — stash the 10-question summary, persist the per-session
-  // totals into the player's stats (so the My-stats dialog reflects them),
-  // and route to the result screen.
+  // Play For Fun / custom quiz finished — purely local, exactly as it was
+  // before the backend existed: stash the summary, persist per-session
+  // totals into localStorage stats, and show the review result screen.
   const handleQuizFinish = (result: QuizResult) => {
     const attempted = result.entries.filter((e) => e.selectedDisplayIndex !== null).length
     recordQuiz({
@@ -157,6 +196,13 @@ function App() {
     })
     setQuizResult(result)
     setScreen('quizResult')
+  }
+
+  // Contest finished — the server already graded it, so just stash the
+  // summary and show the totals-only contest result screen.
+  const handleContestFinish = (grade: ContestGrade) => {
+    setContestGrade(grade)
+    setScreen('contestResult')
   }
 
   // "Try Again" from the result screen: clear the previous result and
@@ -280,6 +326,7 @@ function App() {
     <Box className="app-shell">
       <StadiumBackground />
       <CricketHistoryButton />
+      <LeaderboardButton />
       <StatsButton />
       <HowToPlayButton />
       <DayNightToggle />
@@ -317,6 +364,7 @@ function App() {
       </Box>
       <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
       <AnimatePresence mode="wait">
+        {screen === 'auth' && <AuthScreen key="auth" onAuthed={handleAuthed} />}
         {screen === 'playerName' && (
           <PlayerNameScreen key="player-name" onSubmit={handleNameSubmit} />
         )}
@@ -336,13 +384,22 @@ function App() {
             onBack={() => setScreen('startChoice')}
           />
         )}
+        {screen === 'quizMode' && (
+          <QuizModeScreen
+            key="quiz-mode"
+            playerName={playerName}
+            onPlayForFun={handlePlayForFun}
+            onContestStart={handleContestStart}
+            onBack={() => setScreen('startChoice')}
+          />
+        )}
         {screen === 'quizDifficulty' && (
           <QuizDifficultyScreen
             key="quiz-difficulty"
             playerName={playerName}
             onSelect={handleQuizDifficulty}
             onCustomize={handleCustomizeQuiz}
-            onBack={() => setScreen('startChoice')}
+            onBack={() => setScreen('quizMode')}
           />
         )}
         {screen === 'customizeQuiz' && (
@@ -358,8 +415,11 @@ function App() {
             key={`quiz-${customQuestions ? 'custom' : quizDifficulty}`}
             playerName={playerName}
             customQuestions={customQuestions ?? undefined}
+            couponCode={contestCoupon ?? undefined}
+            email={email}
             difficulty={quizDifficulty}
             onFinish={handleQuizFinish}
+            onContestFinish={handleContestFinish}
             onBack={() => setScreen('quizDifficulty')}
           />
         )}
@@ -369,6 +429,18 @@ function App() {
             result={quizResult}
             onTryAgain={handleQuizTryAgain}
             onHome={() => setScreen('startChoice')}
+          />
+        )}
+        {screen === 'contestResult' && contestGrade && (
+          <ContestResultScreen
+            key="contest-result"
+            grade={contestGrade}
+            onHome={() => {
+              setContestGrade(null)
+              setCustomQuestions(null)
+              setContestCoupon(null)
+              setScreen('startChoice')
+            }}
           />
         )}
         {screen === 'matchLength' && (

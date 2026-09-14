@@ -7,6 +7,7 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import LinearProgress from '@mui/material/LinearProgress'
+import Alert from '@mui/material/Alert'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
@@ -17,6 +18,7 @@ import {
   type QuizDifficultyChoice,
   type QuizQuestion,
 } from '../quiz/questions'
+import { submitContest, type ContestGrade } from '../api/client'
 
 // One entry in the per-session-shuffled question list. We hold the original
 // QuizQuestion plus a permutation of [0..3] that maps the displayed-option
@@ -36,6 +38,13 @@ export type QuizResult = {
   entries: QuizSessionEntry[]
   totalQuestions: number
   correctCount: number
+  // Per-entry correctness, aligned to `entries`. Computed locally for
+  // normal quizzes (from correctIndex); returned by the server for
+  // contest quizzes (whose questions carry no answer key client-side).
+  correctFlags: boolean[]
+  // Wall-clock seconds from the quiz mounting to Finish (or the last
+  // question timing out).
+  durationSeconds: number
 }
 
 const QUESTIONS_PER_QUIZ = 10
@@ -59,7 +68,16 @@ type Props = {
   // flow after Gemini generates a tailored set). When provided we use
   // these verbatim and skip the local-bank sample.
   customQuestions?: QuizQuestion[]
+  // Set for a contest run. Its presence switches Finish to server-side
+  // grading: the answers, coupon, email, and time are POSTed and the
+  // score comes back from the backend instead of being computed locally.
+  couponCode?: string
+  // The signed-in email, sent with a contest submission. Unused for
+  // Play For Fun / custom quizzes (which never touch the backend).
+  email?: string
   onFinish: (result: QuizResult) => void
+  // Called instead of onFinish when a contest run is graded by the server.
+  onContestFinish?: (grade: ContestGrade) => void
   onBack: () => void
 }
 
@@ -77,7 +95,10 @@ export default function QuizScreen({
   playerName,
   difficulty,
   customQuestions,
+  couponCode,
+  email,
   onFinish,
+  onContestFinish,
   onBack,
 }: Props) {
   // Initial-session computation. If a custom set was supplied (Customize
@@ -96,10 +117,18 @@ export default function QuizScreen({
       selectedDisplayIndex: null,
     }))
   })
+  // Quiz start timestamp, captured once on mount. Used to report total
+  // time spent when the quiz finishes.
+  const startedAt = useRef(Date.now())
   const [currentIndex, setCurrentIndex] = useState(0)
   // Per-question countdown shown as a circular dial above the options.
   // Reset every time `currentIndex` changes (in the timer effect below).
   const [secondsLeft, setSecondsLeft] = useState<number>(QUESTION_TIMER_SECONDS)
+  // Contest submit state: while a grade request is in flight the Finish
+  // button shows a spinner label, and a failed submit surfaces an error
+  // with the button re-enabled so the player can retry.
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const current = entries[currentIndex]
   const isLast = currentIndex === entries.length - 1
@@ -128,18 +157,54 @@ export default function QuizScreen({
     if (!isLast) setCurrentIndex((i) => i + 1)
   }
 
-  // Tallies correct answers and hands the final payload to the parent.
-  // Unanswered questions count as wrong (the user chose not to answer).
+  // The player's chosen ORIGINAL option index per question (null = skipped),
+  // in the served order — this is what the contest grader needs.
+  const selectedOriginalIndexes = (): (number | null)[] =>
+    entries.map((e) => (e.selectedDisplayIndex === null ? null : e.displayOrder[e.selectedDisplayIndex]))
+
+  // Finishes the quiz. Play For Fun / custom quizzes are graded locally
+  // against each question's correctIndex — no backend call, exactly as
+  // before the backend existed. Contest quizzes (couponCode set) carry no
+  // answer key: the coupon, answers, email, and time are POSTed and the
+  // server returns the summary score. Unanswered questions count as wrong.
   const handleFinish = useMemo(
-    () => () => {
-      const correctCount = entries.reduce((sum, e) => {
-        if (e.selectedDisplayIndex === null) return sum
+    () => async () => {
+      if (submitting) return
+      const durationSeconds = Math.round((Date.now() - startedAt.current) / 1000)
+
+      if (couponCode) {
+        setSubmitting(true)
+        setSubmitError(null)
+        try {
+          const grade = await submitContest({
+            couponCode,
+            answers: selectedOriginalIndexes(),
+            email: email ?? '',
+            timeSeconds: durationSeconds,
+          })
+          onContestFinish?.(grade)
+        } catch (err) {
+          setSubmitError(err instanceof Error ? err.message : 'Could not submit your answers. Try again.')
+          setSubmitting(false)
+        }
+        return
+      }
+
+      const correctFlags = entries.map((e) => {
+        if (e.selectedDisplayIndex === null) return false
         const originalIndex = e.displayOrder[e.selectedDisplayIndex]
-        return originalIndex === e.question.correctIndex ? sum + 1 : sum
-      }, 0)
-      onFinish({ entries, totalQuestions: entries.length, correctCount })
+        return originalIndex === e.question.correctIndex
+      })
+      onFinish({
+        entries,
+        totalQuestions: entries.length,
+        correctCount: correctFlags.filter(Boolean).length,
+        correctFlags,
+        durationSeconds,
+      })
     },
-    [entries, onFinish],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entries, onFinish, onContestFinish, couponCode, email, submitting],
   )
 
   // Ref-mirror of the "what to do when the timer fires" callback. The
@@ -262,11 +327,12 @@ export default function QuizScreen({
             {isLast ? (
               <Button
                 onClick={handleFinish}
+                disabled={submitting}
                 variant="contained"
                 color="success"
                 startIcon={<CheckCircleOutlineIcon />}
               >
-                Finish Quiz
+                {submitting ? 'Submitting…' : 'Finish Quiz'}
               </Button>
             ) : (
               <Button
@@ -279,6 +345,12 @@ export default function QuizScreen({
               </Button>
             )}
           </Stack>
+
+          {submitError && (
+            <Alert severity="error" sx={{ textAlign: 'left' }}>
+              {submitError}
+            </Alert>
+          )}
 
           <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>
             Back to mode selection
