@@ -1,0 +1,184 @@
+/* The .stadium wrapper holds the CSS variables that drive the night-vs-day
+   palette. .stadium--day overrides each variable; the values then flow into
+   gradient stops, group opacities, and the crowd-dot fills below. */
+.stadium {
+  --sky-top: #080524;
+  --sky-mid: #1e1b4b;
+  --sky-bot: #312e81;
+  --field-top: #15803d;
+  --field-bot: #052e16;
+  --tier-top: #1e293b;
+  --tier-bot: #0b1220;
+  --cloud-fill: #cbd5e1;
+  --cloud-opacity: 0.14;
+  --vignette-mid: rgba(5, 8, 16, 0.55);
+  --vignette-outer: rgba(5, 8, 16, 0.85);
+  --night-opacity: 1;
+  --day-opacity: 0;
+  --floodlight-opacity: 1;
+}
+
+.stadium--day {
+  --sky-top: #93c5fd;
+  --sky-mid: #60a5fa;
+  --sky-bot: #38bdf8;
+  --field-top: #4ade80;
+  --field-bot: #166534;
+  --tier-top: #475569;
+  --tier-bot: #1e293b;
+  --cloud-fill: #f8fafc;
+  --cloud-opacity: 0.55;
+  --vignette-mid: rgba(15, 23, 42, 0.2);
+  --vignette-outer: rgba(15, 23, 42, 0.5);
+  --night-opacity: 0;
+  --day-opacity: 1;
+  --floodlight-opacity: 0.12;
+}
+
+/* Slow crossfade between palettes whenever the mode flips. */
+.stadium svg stop {
+  transition: stop-color 1s ease;
+}
+.stadium .night-only {
+  opacity: var(--night-opacity);
+  transition: opacity 1s ease;
+}
+.stadium .day-only {
+  opacity: var(--day-opacity);
+  transition: opacity 1s ease;
+}
+.stadium .floodlight-set {
+  opacity: var(--floodlight-opacity);
+  transition: opacity 1s ease;
+}
+.stadium .cloud-blob {
+  fill: var(--cloud-fill);
+  transition:
+    fill 1s ease,
+    opacity 1s ease;
+}
+
+/* Crowd dot palette. Night uses the original cool greys; day uses a lighter
+   set so the seating reads against the bright sky and field. */
+.crowd-dot {
+  opacity: 0.55;
+  transition: fill 0.8s ease;
+}
+.crowd-dot--0 {
+  fill: #475569;
+}
+.crowd-dot--1 {
+  fill: #64748b;
+}
+.crowd-dot--2 {
+  fill: #334155;
+}
+.crowd-dot--3 {
+  fill: #94a3b8;
+}
+.stadium--day .crowd-dot--0 {
+  fill: #94a3b8;
+}
+.stadium--day .crowd-dot--1 {
+  fill: #cbd5e1;
+}
+.stadium--day .crowd-dot--2 {
+  fill: #64748b;
+}
+.stadium--day .crowd-dot--3 {
+  fill: #e2e8f0;
+}
+
+/* Reaction classes (unchanged from Part 16). The parent <g> gets one of these
+   when an event fires; per-dot `--stagger-delay` creates the wave. */
+.crowd--four .crowd-dot {
+  animation: crowd-four 1.6s ease-out var(--stagger-delay, 0s);
+}
+.crowd--six .crowd-dot {
+  animation: crowd-six 1.7s ease-out var(--stagger-delay, 0s);
+}
+.crowd--wicket .crowd-dot {
+  animation: crowd-wicket 1.5s ease-out var(--stagger-delay, 0s);
+}
+.crowd--win .crowd-dot {
+  animation: crowd-win 1.8s ease-out var(--stagger-delay, 0s);
+}
+.crowd--lose .crowd-dot {
+  animation: crowd-lose 1.6s ease-out var(--stagger-delay, 0s);
+}
+
+@keyframes crowd-four {
+  0% {
+    opacity: 0.55;
+  }
+  15% {
+    fill: #fbbf24;
+    opacity: 0.95;
+  }
+  70% {
+    fill: #fbbf24;
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
+@keyframes crowd-six {
+  0% {
+    opacity: 0.55;
+  }
+  12% {
+    fill: #fde047;
+    opacity: 1;
+  }
+  70% {
+    fill: #fbbf24;
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
+@keyframes crowd-wicket {
+  0% {
+    opacity: 0.55;
+  }
+  10% {
+    fill: #ef4444;
+    opacity: 0.95;
+  }
+  60% {
+    fill: #dc2626;
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
+@keyframes crowd-win {
+  0% {
+    opacity: 0.55;
+  }
+  12% {
+    fill: #34d399;
+    opacity: 1;
+  }
+  75% {
+    fill: #10b981;
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
+@keyframes crowd-lose {
+  0% {
+    opacity: 0.55;
+  }
+  40% {
+    opacity: 0.25;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}

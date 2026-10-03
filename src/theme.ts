@@ -18,6 +18,21 @@ const theme = createTheme({
     button: { textTransform: 'none', fontWeight: 600 },
   },
   shape: { borderRadius: 12 },
+  components: {
+    // The default selected tab is a faint tint with light-blue text, too subtle to
+    // spot. Solid fill makes the active tab obvious.
+    MuiToggleButton: {
+      styleOverrides: {
+        root: {
+          color: 'rgba(248, 250, 252, 0.85)',
+          '&.Mui-selected, &.Mui-selected:hover': {
+            backgroundColor: '#38bdf8',
+            color: '#0b1220',
+          },
+        },
+      },
+    },
+  },
 })
 
 export default theme

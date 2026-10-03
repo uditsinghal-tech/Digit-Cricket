@@ -1,11 +1,16 @@
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import { motion, type Variants } from 'framer-motion'
 import AnimatedFace, { type Mood } from '../components/AnimatedFace'
+import { useSounds } from '../audio/useSounds'
+import { useStadiumReaction } from '../stadium/useStadiumReaction'
+import { useMultiplayer } from '../multiplayer/useMultiplayer'
 import type { BallEvent, MatchResult } from '../game/types'
 
 type Props = {
@@ -24,14 +29,73 @@ const CONFETTI_COLORS = ['#38bdf8', '#a855f7', '#fbbf24', '#22c55e', '#f87171', 
 
 // Final screen. Reveals the result with a staged animation, summarises both
 // innings ball-by-ball, and offers Play Again (keep name) or Change Name (full reset).
+// In multiplayer, Play Again is a handshake — both peers must click before
+// the rematch actually starts.
 export default function MatchResultScreen({ result, onPlayAgain, onChangeName }: Props) {
-  const { playerName, playerScore, computerScore, winner, firstBatter, events } = result
+  const { playerName, playerScore, computerScore, winner, firstBatter, events, totalInnings } =
+    result
+  const { play } = useSounds()
+  const { triggerReaction } = useStadiumReaction()
+  const { status: multiplayerStatus, opponentName, send: sendNetwork, subscribe } = useMultiplayer()
+
+  const isMultiplayer = multiplayerStatus === 'connected'
 
   const playerWon = winner === 'player'
   const isTie = winner === 'tie'
   const margin = Math.abs(playerScore - computerScore)
 
-  const headline = isTie ? "It's a tie!" : playerWon ? `${playerName} wins!` : 'Computer wins!'
+  // Multiplayer rematch handshake state. Both flags must be true before we
+  // advance the screen. Local goes true on click; opponent goes true on the
+  // incoming REMATCH_REQUEST message.
+  const [localRequested, setLocalRequested] = useState(false)
+  const [opponentRequested, setOpponentRequested] = useState(false)
+
+  // Subscribes to the opponent's REMATCH_REQUEST while we're connected.
+  // Unsubscribes on unmount / disconnect.
+  useEffect(() => {
+    if (!isMultiplayer) return
+    return subscribe((msg) => {
+      if (msg.type === 'REMATCH_REQUEST') {
+        setOpponentRequested(true)
+      }
+    })
+  }, [isMultiplayer, subscribe])
+
+  // Once both sides have requested a rematch, fire the parent callback to
+  // navigate back to the multiplayer coin toss.
+  useEffect(() => {
+    if (!isMultiplayer) return
+    if (localRequested && opponentRequested) {
+      onPlayAgain()
+    }
+  }, [isMultiplayer, localRequested, opponentRequested, onPlayAgain])
+
+  // Play the celebration sound + fire the stadium visual reaction shortly
+  // after mount so both land alongside the trophy spring-in. Tie matches stay
+  // quiet — neither side gets to gloat.
+  useEffect(() => {
+    if (isTie) return
+    const timer = setTimeout(() => {
+      const kind = playerWon ? 'win' : 'lose'
+      play(kind)
+      triggerReaction(kind)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [isTie, playerWon, play, triggerReaction])
+
+  // Play Again click handler. In singleplayer the parent's callback fires
+  // immediately. In multiplayer we send REMATCH_REQUEST and wait for the
+  // opponent's request before advancing.
+  const handlePlayAgainClick = () => {
+    if (!isMultiplayer) {
+      onPlayAgain()
+      return
+    }
+    sendNetwork({ type: 'REMATCH_REQUEST' })
+    setLocalRequested(true)
+  }
+
+  const headline = isTie ? "It's a tie!" : playerWon ? `${playerName} wins!` : 'DigitCricket wins!'
   const subline = isTie
     ? `Both finished on ${playerScore}`
     : `by ${margin} run${margin === 1 ? '' : 's'}`
@@ -39,10 +103,16 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
   const playerMood: Mood = isTie ? 'neutral' : playerWon ? 'happy' : 'sad'
   const computerMood: Mood = isTie ? 'neutral' : playerWon ? 'sad' : 'happy'
 
-  const inningsOneEvents = events.filter((e) => e.innings === 1)
-  const inningsTwoEvents = events.filter((e) => e.innings === 2)
-  const firstBatterLabel = firstBatter === 'player' ? playerName : 'Computer'
-  const secondBatterLabel = firstBatter === 'player' ? 'Computer' : playerName
+  // For a 4-innings test match the first batter plays innings 1 + 3 and
+  // the second batter plays innings 2 + 4. Fold those pairs into one
+  // events list per side so the existing two-column summary keeps working
+  // regardless of format.
+  const firstBatterInnings: (1 | 2 | 3 | 4)[] = totalInnings === 4 ? [1, 3] : [1]
+  const secondBatterInnings: (1 | 2 | 3 | 4)[] = totalInnings === 4 ? [2, 4] : [2]
+  const inningsOneEvents = events.filter((e) => firstBatterInnings.includes(e.innings))
+  const inningsTwoEvents = events.filter((e) => secondBatterInnings.includes(e.innings))
+  const firstBatterLabel = firstBatter === 'player' ? playerName : 'DigitCricket'
+  const secondBatterLabel = firstBatter === 'player' ? 'DigitCricket' : playerName
   const firstInningsTotal = firstBatter === 'player' ? playerScore : computerScore
   const secondInningsTotal = firstBatter === 'player' ? computerScore : playerScore
 
@@ -122,7 +192,7 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
                 vs
               </Typography>
               <PlayerResult
-                name="Computer"
+                name="DigitCricket"
                 score={computerScore}
                 mood={computerMood}
                 accent="secondary"
@@ -133,13 +203,21 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
 
           <Stack spacing={1}>
             <InningsRow
-              label={`Innings 1 — ${firstBatterLabel}`}
+              label={
+                totalInnings === 4
+                  ? `Innings 1+3 — ${firstBatterLabel}`
+                  : `Innings 1 — ${firstBatterLabel}`
+              }
               events={inningsOneEvents}
               total={firstInningsTotal}
               animationOffset={0.8}
             />
             <InningsRow
-              label={`Innings 2 — ${secondBatterLabel}`}
+              label={
+                totalInnings === 4
+                  ? `Innings 2+4 — ${secondBatterLabel}`
+                  : `Innings 2 — ${secondBatterLabel}`
+              }
               events={inningsTwoEvents}
               total={secondInningsTotal}
               animationOffset={1.0}
@@ -155,13 +233,22 @@ export default function MatchResultScreen({ result, onPlayAgain, onChangeName }:
               <Button
                 variant="contained"
                 size="large"
-                onClick={onPlayAgain}
+                onClick={handlePlayAgainClick}
+                disabled={isMultiplayer && localRequested}
                 sx={{ py: 1.25, fontSize: '1rem' }}
               >
-                Play again
+                {isMultiplayer && localRequested ? 'Waiting for opponent…' : 'Play again'}
               </Button>
+              {isMultiplayer && localRequested && (
+                <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
+                  <CircularProgress size={14} color="secondary" />
+                  <Typography variant="caption" sx={{ opacity: 0.75 }}>
+                    Waiting for {opponentName ?? 'opponent'} to confirm…
+                  </Typography>
+                </Stack>
+              )}
               <Button variant="text" color="secondary" onClick={onChangeName}>
-                Change name
+                {isMultiplayer ? 'Leave match' : 'Change name'}
               </Button>
             </Stack>
           </motion.div>
