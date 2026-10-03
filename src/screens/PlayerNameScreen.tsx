@@ -5,15 +5,12 @@ import Typography from '@mui/material/Typography'
 import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
 import { motion, type Variants } from 'framer-motion'
-import { MAX_PLAYER_NAME_LENGTH, MIN_PLAYER_NAME_LENGTH } from '../game/types'
+import { ALLOWED_NAME_PATTERN, MAX_PLAYER_NAME_LENGTH, MIN_PLAYER_NAME_LENGTH } from '../game/types'
 
-// Whitelist of characters allowed in a player name. Letters (incl. Unicode
-// for international names), digits, and spaces only. Everything else —
-// quotes, angle brackets, ampersands, backticks, slashes, semicolons, etc.
-// — is rejected. Rendering already escapes via React, but blocking these
-// at input time keeps malformed names out of the PeerJS HELLO payload and
-// out of the scoreboard / result UI.
-const ALLOWED_NAME_PATTERN = /^[\p{L}\p{N} ]*$/u
+// ALLOWED_NAME_PATTERN rejects quotes, angle brackets, ampersands, etc.
+// Rendering already escapes via React, but blocking these at input time
+// keeps malformed names out of the PeerJS HELLO payload and out of the
+// scoreboard / result UI.
 
 // localStorage key used to remember the last name the player entered, so
 // the welcome screen prefills it next time. Editable — any change here is

@@ -27,11 +27,14 @@ export function sanitizeChatMessage(input: unknown, maxLength: number): string |
 
   // 1. Strip ASCII control characters (NUL through US, plus DEL) but
   //    keep \n and \t so multi-line messages still arrive readably.
-  let text = input.replace(/[ --]/g, '')
+  //    Written as \u escapes: the raw characters were lost from this file once,
+  //    which turned the class into ' '..'-' and stripped spaces + punctuation.
+  // eslint-disable-next-line no-control-regex
+  let text = input.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '')
 
   // 2. Strip zero-width and Unicode bidi-control characters used to
   //    spoof what the rendered text actually says.
-  text = text.replace(/[​-‏‪-‮⁦-⁩﻿]/g, '')
+  text = text.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
 
   // 3. Collapse pathological whitespace runs and trim.
   text = text.replace(/\s+/g, ' ').trim()

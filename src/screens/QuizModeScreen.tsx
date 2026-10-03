@@ -14,6 +14,10 @@ import type { QuizQuestion } from '../quiz/questions'
 
 type Props = {
   playerName: string
+  // Guests have no account, so the contest asks them to sign in instead
+  // of showing the coupon box. (The backend also refuses them: no session.)
+  isGuest: boolean
+  onSignIn: () => void
   // Play For Fun — keeps the existing sampled-quiz flow (difficulty picker).
   onPlayForFun: () => void
   // Contest coupon validated — hands back the fetched question set and the
@@ -31,7 +35,14 @@ const containerVariants = {
 // Shown after the player picks "Cricket Quiz". Offers a casual quiz or a
 // coupon-gated contest. The contest path validates the code against the
 // backend and, on success, launches a quiz from the returned questions.
-export default function QuizModeScreen({ playerName, onPlayForFun, onContestStart, onBack }: Props) {
+export default function QuizModeScreen({
+  playerName,
+  isGuest,
+  onSignIn,
+  onPlayForFun,
+  onContestStart,
+  onBack,
+}: Props) {
   const [showCoupon, setShowCoupon] = useState(false)
   const [coupon, setCoupon] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -82,7 +93,7 @@ export default function QuizModeScreen({ playerName, onPlayForFun, onContestStar
             />
             <ChoiceButton
               label="Participate in Contest"
-              sub="Enter a coupon to play"
+              sub={isGuest ? 'Sign in required' : 'Enter a coupon to play'}
               color="primary"
               icon={<EmojiEventsIcon sx={{ fontSize: 36 }} />}
               onClick={() => {
@@ -92,13 +103,31 @@ export default function QuizModeScreen({ playerName, onPlayForFun, onContestStar
             />
           </Stack>
 
-          {showCoupon && (
+          {showCoupon && isGuest && (
+            <Stack spacing={2} sx={{ width: '100%' }}>
+              <Alert severity="info" sx={{ textAlign: 'left' }}>
+                Please sign in and try. Contests need an account so your score counts on the
+                leaderboard. Play For Fun works as a guest.
+              </Alert>
+              <Button
+                variant="contained"
+                size="large"
+                fullWidth
+                onClick={onSignIn}
+                sx={{ py: 1.25 }}
+              >
+                Sign Up / Sign In
+              </Button>
+            </Stack>
+          )}
+
+          {showCoupon && !isGuest && (
             <Stack spacing={2} sx={{ width: '100%' }}>
               <TextField
                 autoFocus
                 fullWidth
                 label="Coupon code"
-                placeholder="e.g. CRIC2026"
+                placeholder="Enter the code we sent you"
                 value={coupon}
                 onChange={(e) => setCoupon(e.target.value)}
                 onKeyDown={(e) => {
@@ -106,9 +135,21 @@ export default function QuizModeScreen({ playerName, onPlayForFun, onContestStar
                 }}
                 disabled={busy}
               />
-              {error && (
+              {error ? (
                 <Alert severity="error" sx={{ textAlign: 'left' }}>
                   {error}
+                </Alert>
+              ) : (
+                // The server counts the attempt the moment the quiz starts.
+                <Alert severity="warning" sx={{ textAlign: 'left' }}>
+                  One attempt only: 20 questions, 15 seconds each, no going back. Once you start,
+                  closing or refreshing the page ends your attempt.
+                  <br />
+                  <br />
+                  {/* Mirrors ContestScoring.java on the backend. */}
+                  <b>Scoring (out of 100):</b> each question is worth 5 points. A wrong or skipped
+                  answer scores 0. A correct answer scores 2.5 to 5: the faster you answer, the more
+                  you get. So answer correctly first, then quickly.
                 </Alert>
               )}
               <Button
@@ -119,7 +160,7 @@ export default function QuizModeScreen({ playerName, onPlayForFun, onContestStar
                 onClick={handleParticipate}
                 sx={{ py: 1.25 }}
               >
-                {busy ? 'Validating…' : 'Participate'}
+                {busy ? 'Starting…' : 'Start Contest'}
               </Button>
             </Stack>
           )}

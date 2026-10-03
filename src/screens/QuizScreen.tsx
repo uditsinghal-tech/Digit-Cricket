@@ -69,12 +69,10 @@ type Props = {
   // these verbatim and skip the local-bank sample.
   customQuestions?: QuizQuestion[]
   // Set for a contest run. Its presence switches Finish to server-side
-  // grading: the answers, coupon, email, and time are POSTed and the
-  // score comes back from the backend instead of being computed locally.
+  // grading (answers + per-question times are POSTed; the session cookie
+  // identifies the player) and makes the quiz forward-only: no Previous,
+  // no Back, so each question's time is measured in one visit.
   couponCode?: string
-  // The signed-in email, sent with a contest submission. Unused for
-  // Play For Fun / custom quizzes (which never touch the backend).
-  email?: string
   onFinish: (result: QuizResult) => void
   // Called instead of onFinish when a contest run is graded by the server.
   onContestFinish?: (grade: ContestGrade) => void
@@ -96,7 +94,6 @@ export default function QuizScreen({
   difficulty,
   customQuestions,
   couponCode,
-  email,
   onFinish,
   onContestFinish,
   onBack,
@@ -120,6 +117,16 @@ export default function QuizScreen({
   // Quiz start timestamp, captured once on mount. Used to report total
   // time spent when the quiz finishes.
   const startedAt = useRef(Date.now())
+  // Milliseconds spent on each question (contest scoring rewards speed).
+  // questionShownAt is stamped by the per-question timer effect below;
+  // bankTime() adds the time since then to the question being left.
+  const timesMs = useRef<number[]>(entries.map(() => 0))
+  const questionShownAt = useRef(0)
+  const bankTime = (index: number) => {
+    const now = Date.now()
+    timesMs.current[index] += now - questionShownAt.current
+    questionShownAt.current = now
+  }
   const [currentIndex, setCurrentIndex] = useState(0)
   // Per-question countdown shown as a circular dial above the options.
   // Reset every time `currentIndex` changes (in the timer effect below).
@@ -148,13 +155,17 @@ export default function QuizScreen({
   // Walks back one question. Selections are preserved so the user can
   // change their answer if they want to.
   const handlePrevious = () => {
-    if (!isFirst) setCurrentIndex((i) => i - 1)
+    if (isFirst) return
+    bankTime(currentIndex)
+    setCurrentIndex((i) => i - 1)
   }
 
   // Walks forward one question. Disabled on the last card — the Finish
   // Quiz button takes over there.
   const handleNext = () => {
-    if (!isLast) setCurrentIndex((i) => i + 1)
+    if (isLast) return
+    bankTime(currentIndex)
+    setCurrentIndex((i) => i + 1)
   }
 
   // The player's chosen ORIGINAL option index per question (null = skipped),
@@ -173,14 +184,18 @@ export default function QuizScreen({
       const durationSeconds = Math.round((Date.now() - startedAt.current) / 1000)
 
       if (couponCode) {
+        // Finish is only reachable from the last question (button or its
+        // timeout), so bank that one explicitly rather than reading a
+        // possibly-stale currentIndex from this memoised closure. On a
+        // retry after a failed submit this only adds the wait in between.
+        bankTime(entries.length - 1)
         setSubmitting(true)
         setSubmitError(null)
         try {
           const grade = await submitContest({
             couponCode,
             answers: selectedOriginalIndexes(),
-            email: email ?? '',
-            timeSeconds: durationSeconds,
+            timesMs: [...timesMs.current],
           })
           onContestFinish?.(grade)
         } catch (err) {
@@ -204,7 +219,7 @@ export default function QuizScreen({
       })
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [entries, onFinish, onContestFinish, couponCode, email, submitting],
+    [entries, onFinish, onContestFinish, couponCode, submitting],
   )
 
   // Ref-mirror of the "what to do when the timer fires" callback. The
@@ -217,9 +232,22 @@ export default function QuizScreen({
   useEffect(() => {
     advanceRef.current = () => {
       if (isLast) handleFinish()
-      else setCurrentIndex((i) => i + 1)
+      else {
+        bankTime(currentIndex)
+        setCurrentIndex((i) => i + 1)
+      }
     }
   })
+
+  // Contest attempts can't be restarted, so ask the browser to confirm before
+  // a close / refresh / navigate-away throws the attempt away. Removed on
+  // unmount, i.e. once the result screen takes over after submitting.
+  useEffect(() => {
+    if (!couponCode) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [couponCode])
 
   // Per-question countdown. Resets to QUESTION_TIMER_SECONDS whenever the
   // visible question changes, ticks down once per second for display, and
@@ -227,6 +255,7 @@ export default function QuizScreen({
   // advance after the full window. The two are kept independent so a slow
   // render doesn't delay the actual deadline.
   useEffect(() => {
+    questionShownAt.current = Date.now()
     setSecondsLeft(QUESTION_TIMER_SECONDS)
     const tick = window.setInterval(() => {
       setSecondsLeft((s) => Math.max(s - 1, 0))
@@ -315,14 +344,18 @@ export default function QuizScreen({
           </Box>
 
           <Stack direction="row" spacing={1} justifyContent="space-between">
-            <Button
-              startIcon={<ArrowBackIcon />}
-              onClick={handlePrevious}
-              disabled={isFirst}
-              variant="outlined"
-            >
-              Previous
-            </Button>
+            {couponCode ? (
+              <span />
+            ) : (
+              <Button
+                startIcon={<ArrowBackIcon />}
+                onClick={handlePrevious}
+                disabled={isFirst}
+                variant="outlined"
+              >
+                Previous
+              </Button>
+            )}
 
             {isLast ? (
               <Button
@@ -352,9 +385,15 @@ export default function QuizScreen({
             </Alert>
           )}
 
-          <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>
-            Back to mode selection
-          </Button>
+          {couponCode ? (
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              Contest mode: one attempt, no going back. Correct + faster = higher score.
+            </Typography>
+          ) : (
+            <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>
+              Back to mode selection
+            </Button>
+          )}
         </Stack>
       </Box>
     </motion.div>

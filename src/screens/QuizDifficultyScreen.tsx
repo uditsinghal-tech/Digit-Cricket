@@ -26,6 +26,10 @@ const containerVariants = {
   exit: { opacity: 0, y: -24, transition: { duration: 0.3, ease: 'easeIn' } },
 } satisfies Variants
 
+// Off until Gemini calls go through the backend: a VITE_ key is bundled into the public
+// JS, so anyone could copy it. Set a key in .env.local and flip to true to bring it back.
+const CUSTOMIZE_QUIZ_ENABLED = false
+
 export default function QuizDifficultyScreen({ playerName, onSelect, onCustomize, onBack }: Props) {
   return (
     <motion.div
@@ -66,24 +70,26 @@ export default function QuizDifficultyScreen({ playerName, onSelect, onCustomize
               color="error"
               onClick={() => onSelect('mixed')}
             />
-            <Button
-              variant="contained"
-              color="secondary"
-              size="large"
-              startIcon={<AutoAwesomeIcon />}
-              onClick={onCustomize}
-              sx={{
-                py: 1.75,
-                flexDirection: 'column',
-                gap: 0.25,
-                textTransform: 'none',
-              }}
-            >
-              <Typography sx={{ fontSize: '1.1rem', fontWeight: 700 }}>Customize Quiz</Typography>
-              <Typography sx={{ fontSize: '0.78rem', opacity: 0.85 }}>
-                Pick count, scope and topics. Built fresh by Gemini.
-              </Typography>
-            </Button>
+            {CUSTOMIZE_QUIZ_ENABLED && (
+              <Button
+                variant="contained"
+                color="secondary"
+                size="large"
+                startIcon={<AutoAwesomeIcon />}
+                onClick={onCustomize}
+                sx={{
+                  py: 1.75,
+                  flexDirection: 'column',
+                  gap: 0.25,
+                  textTransform: 'none',
+                }}
+              >
+                <Typography sx={{ fontSize: '1.1rem', fontWeight: 700 }}>Customize Quiz</Typography>
+                <Typography sx={{ fontSize: '0.78rem', opacity: 0.85 }}>
+                  Pick count, scope and topics. Built fresh by Gemini.
+                </Typography>
+              </Button>
+            )}
           </Stack>
 
           <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: 'text.secondary' }}>

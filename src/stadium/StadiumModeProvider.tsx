@@ -4,7 +4,7 @@ import { StadiumModeContext, type StadiumMode } from './useStadiumMode'
 
 const STORAGE_KEY = 'digit-cricket:stadium-mode'
 
-// Reads the saved mode from localStorage; defaults to 'night' if missing or unreadable.
+// Reads the saved mode from localStorage; defaults to 'day' (light) if missing or unreadable.
 function readInitialMode(): StadiumMode {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -12,7 +12,7 @@ function readInitialMode(): StadiumMode {
   } catch {
     // ignore (private browsing, full storage, etc.)
   }
-  return 'night'
+  return 'day'
 }
 
 // Owns the current StadiumMode, persists it to localStorage, and exposes a

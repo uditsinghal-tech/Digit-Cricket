@@ -25,19 +25,9 @@
   color: #38bdf8;
 }
 
-/* Day mode: recolour the welcome / mode-select titles and the welcome logo
-   to solid purple so they stay distinct against the light sky. */
-body[data-stadium-mode='day'] .title {
-  background: none;
-  -webkit-text-fill-color: #6b21a8;
-  color: #6b21a8;
-}
-body[data-stadium-mode='day'] .welcome-logo .MuiSvgIcon-root {
-  color: #6b21a8;
-}
-body[data-stadium-mode='day'] .room-code-box {
-  border-color: #6b21a8;
-}
+/* No day-mode recolouring for titles / logo / room code / purple buttons: every
+   screen sits on the dark glass panel (App.tsx) in both modes, so the night
+   colours are the readable ones in day mode too. */
 
 /* Purple-accent buttons: text + icon + border-colour tied to the room-code
    palette. Selector is `.MuiButton-root.purple-accent` so it beats MUI's
@@ -45,12 +35,6 @@ body[data-stadium-mode='day'] .room-code-box {
 .MuiButton-root.purple-accent {
   color: #a855f7;
   border-color: #a855f7;
-}
-body[data-stadium-mode='day'] .MuiButton-root.purple-accent {
-  color: #3b0764;
-  border-color: #3b0764;
-  border-width: 2px;
-  font-weight: 700;
 }
 
 /* Day-mode contrast pass for the in-match overlay panels (Voice + Chat).

@@ -23,11 +23,20 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return data as T
 }
 
-type AuthResponse = { successMessage?: string; failureMessage?: string }
+// Sign up / sign in set an HttpOnly session cookie (sent automatically on
+// same-origin fetches) that identifies the player to the contest endpoints,
+// and return the display name. `admin` unlocks the leaderboard export.
+type AuthResponse = { successMessage?: string; name: string; admin?: boolean }
+type MessageResponse = { successMessage?: string }
 
-// 1. POST /signup
-export function signup(email: string, password: string) {
-  return post<AuthResponse>('/signup', { email, password })
+// 1a. POST /signup/send-code: checks name + email are free and emails a 6-digit code.
+export function sendSignupCode(name: string, email: string) {
+  return post<MessageResponse>('/signup/send-code', { name, email })
+}
+
+// 1b. POST /signup: creates the account once the emailed code checks out.
+export function signup(name: string, email: string, password: string, code: string) {
+  return post<AuthResponse>('/signup', { name, email, password, code })
 }
 
 // 2. POST /login
@@ -35,12 +44,33 @@ export function login(email: string, password: string) {
   return post<AuthResponse>('/login', { email, password })
 }
 
-// 3. GET /quiz/stats — leaderboard of every player. No params. Populated
-// by contest submissions (Play For Fun quizzes stay local, never posted).
+// Forgot password: email a code, then set a new password with it.
+export function sendResetCode(email: string) {
+  return post<MessageResponse>('/password/send-code', { email })
+}
+
+export function resetPassword(email: string, code: string, password: string) {
+  return post<MessageResponse>('/password/reset', { email, code, password })
+}
+
+// POST /logout: ends the server session so the cookie stops identifying the player.
+export function logout() {
+  return post<{ successMessage?: string }>('/logout', {})
+}
+
+// 3. GET /quiz/stats — public leaderboards, one per contest that has
+// submissions, most recently active first. Each board is already ranked by
+// the server (score high→low, ties: less time, then earlier submit); rank
+// is the array position. Titles + display names only, no coupons/emails.
 export type LeaderboardEntry = {
-  email: string
+  name: string
   score: number
-  timeSeconds: number
+}
+
+export type ContestBoard = {
+  id: string
+  title: string
+  entries: LeaderboardEntry[]
 }
 
 // 4. POST /quiz/contest — validate a coupon code and, on success, get the
@@ -65,7 +95,11 @@ export async function validateCoupon(couponCode: string): Promise<QuizQuestion[]
     if (typeof q.question !== 'string' || !q.question.trim()) {
       throw new Error(`Contest question #${idx + 1} is missing text.`)
     }
-    if (!Array.isArray(q.options) || q.options.length !== 4 || q.options.some((o) => typeof o !== 'string')) {
+    if (
+      !Array.isArray(q.options) ||
+      q.options.length !== 4 ||
+      q.options.some((o) => typeof o !== 'string')
+    ) {
       throw new Error(`Contest question #${idx + 1} needs exactly 4 text options.`)
     }
     return {
@@ -81,31 +115,52 @@ export async function validateCoupon(couponCode: string): Promise<QuizQuestion[]
 
 // 5. POST /quiz/contest/submit — send the coupon, the player's chosen
 // option index per question (null = skipped, in the order the questions
-// were served), the player's email, and the total time spent. The server
-// grades and returns the summary. No per-question breakdown comes back —
-// the contest result screen only shows the totals.
+// were served) and the milliseconds spent on each. The player is identified
+// by the session cookie. The server scores out of 100 and returns the
+// summary — no per-question breakdown, so the answer key never leaks.
 export type ContestGrade = {
   correct: number
   incorrect: number
   score: number
   timeSeconds: number
+  // Leaderboard position right now, out of everyone who has started this contest.
+  rank: number
+  totalPlayers: number
+  contestTitle: string
 }
 
 export async function submitContest(input: {
   couponCode: string
   answers: (number | null)[]
-  email: string
-  timeSeconds: number
+  timesMs: number[]
 }): Promise<ContestGrade> {
   return post<ContestGrade>('/quiz/contest/submit', input)
 }
 
-export async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
+export async function fetchLeaderboard(): Promise<ContestBoard[]> {
   const res = await fetch(`${BASE}/quiz/stats`)
   if (!res.ok) throw new Error(`Request failed (${res.status})`)
-  const rows = (await res.json()) as LeaderboardEntry[]
-  // Rank order: score high→low, then time low→high on a tie. The API
-  // returns it sorted, but re-sort here so the rank column is correct
-  // regardless of what the server sends back.
-  return [...rows].sort((a, b) => b.score - a.score || a.timeSeconds - b.timeSeconds)
+  return (await res.json()) as ContestBoard[]
+}
+
+// Admin only (server checks the session): every entry with emails, for contacting winners.
+export type AdminEntry = {
+  rank: number
+  name: string
+  email: string
+  finished: boolean
+  score: number
+  correct: number | null
+  timeSeconds: number | null
+  startedAt: string
+  submittedAt: string | null
+}
+
+export async function fetchAdminResults(): Promise<
+  { id: string; title: string; entries: AdminEntry[] }[]
+> {
+  const res = await fetch(`${BASE}/quiz/admin/results`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data?.failureMessage || `Request failed (${res.status})`)
+  return data
 }

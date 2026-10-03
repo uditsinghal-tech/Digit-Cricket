@@ -5,12 +5,13 @@ import { SoundContext } from './useSounds'
 
 const STORAGE_KEY = 'digit-cricket:muted'
 
-// Reads the saved mute state from localStorage; defaults to false if missing or unreadable.
+// Reads the saved mute state from localStorage; defaults to muted unless the
+// player has unmuted before (or storage is unreadable).
 function readInitialMuted(): boolean {
   try {
-    return localStorage.getItem(STORAGE_KEY) === 'true'
+    return localStorage.getItem(STORAGE_KEY) !== 'false'
   } catch {
-    return false
+    return true
   }
 }
 

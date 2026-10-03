@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import PersonIcon from '@mui/icons-material/Person'
+import LoginIcon from '@mui/icons-material/Login'
+import LogoutIcon from '@mui/icons-material/Logout'
 import { AnimatePresence } from 'framer-motion'
 import AuthScreen from './screens/AuthScreen'
 import PlayerNameScreen from './screens/PlayerNameScreen'
@@ -28,7 +35,7 @@ import StatsButton from './components/StatsButton'
 import LeaderboardButton from './components/LeaderboardButton'
 import CricketHistoryButton from './components/CricketHistoryButton'
 import { recordMatch, recordQuiz } from './stats/playerStats'
-import type { ContestGrade } from './api/client'
+import { logout, type ContestGrade } from './api/client'
 import { useMultiplayer } from './multiplayer/useMultiplayer'
 import type { NetworkMessage } from './multiplayer/messages'
 import type {
@@ -48,9 +55,14 @@ import './App.css'
 // and animates between screens with AnimatePresence.
 function App() {
   const [screen, setScreen] = useState<ScreenName>('auth')
-  // Email the player authenticated with. Identity used for the server-side
-  // quiz stats endpoints. Empty until they sign in / sign up.
-  const [email, setEmail] = useState('')
+  // Guests entered with a display name only (no account / session), so the
+  // contest is off-limits to them; everything else works the same.
+  const [isGuest, setIsGuest] = useState(false)
+  // Signed in with the admin email (server decides): unlocks the leaderboard export.
+  const [isAdmin, setIsAdmin] = useState(false)
+  // Name-chip menu (Log out / Sign In) and the entry tab to open on return.
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState<HTMLElement | null>(null)
+  const [authTab, setAuthTab] = useState<'signup' | 'login'>('signup')
   const [playerName, setPlayerName] = useState('')
   const [ballsPerInnings, setBallsPerInnings] = useState<BallsPerInnings | null>(null)
   // Total innings the match runs for. Defaults to 2 (standard format).
@@ -116,12 +128,57 @@ function App() {
     }
   }, [multiplayerStatus, screen])
 
-  // Signup/login succeeded — stash the email (used as the quiz-stats
-  // identity) and move on to name entry.
-  const handleAuthed = (authedEmail: string) => {
-    setEmail(authedEmail)
-    setScreen('playerName')
+  // Signup/login succeeded — the account's display name comes back from
+  // the server, so skip name entry and go straight to the start choice.
+  // (The session cookie identifies the player to the contest endpoints.)
+  const handleAuthed = (name: string, admin: boolean) => {
+    setIsGuest(false)
+    setIsAdmin(admin)
+    setPlayerName(name)
+    setScreen('startChoice')
   }
+
+  // "Play as guest": display name only, straight to the start choice.
+  const handleGuest = (name: string) => {
+    setIsGuest(true)
+    setPlayerName(name)
+    setScreen('startChoice')
+  }
+
+  // Back to the entry screen with everything cleared (name, guest flag, any
+  // match / quiz / contest in progress, multiplayer room). `tab` picks which
+  // entry tab opens: Sign In when a guest asked to sign in.
+  const goHome = (tab: 'signup' | 'login') => {
+    setAccountMenuAnchor(null)
+    if (multiplayerStatus === 'connected') disconnect()
+    setIsGuest(false)
+    setIsAdmin(false)
+    setPlayerName('')
+    setBallsPerInnings(null)
+    setTotalInnings(2)
+    setTossOutcome(null)
+    setRoleDecision(null)
+    setMatchResult(null)
+    setQuizResult(null)
+    setQuizDifficulty('mixed')
+    setCustomQuestions(null)
+    setContestCoupon(null)
+    setContestGrade(null)
+    setAuthTab(tab)
+    setScreen('auth')
+  }
+
+  // Ends the server session too, so the cookie stops identifying this player
+  // (shared phone). Goes home even if the call fails: worst case the stale
+  // session is replaced at the next sign in.
+  const handleLogout = () => {
+    logout().catch(() => {})
+    goHome('signup')
+  }
+
+  // A contest quiz on screen: its single attempt is live, so the name-chip
+  // menu is disabled until it's submitted.
+  const contestInProgress = screen === 'quiz' && contestCoupon !== null
 
   // Saves the entered name and advances to the new start-choice screen
   // (Play Cricket / Quiz). The cricket flow continues from there.
@@ -326,11 +383,60 @@ function App() {
     <Box className="app-shell">
       <StadiumBackground />
       <CricketHistoryButton />
-      <LeaderboardButton />
+      {/* Display names of accounts are unique, so a name match is this player's row. */}
+      <LeaderboardButton highlightName={isGuest ? null : playerName || null} isAdmin={isAdmin} />
       <StatsButton />
       <HowToPlayButton />
       <DayNightToggle />
       <MuteToggle />
+      {/* Who's playing, top-left (the icon row owns the top-right). Hidden on the
+          entry screen; long names truncate so the chip never runs into the icons. */}
+      {screen !== 'auth' && playerName && (
+        <Chip
+          icon={<PersonIcon />}
+          label={isGuest ? `${playerName} · Guest` : playerName}
+          onClick={(e) => setAccountMenuAnchor(e.currentTarget)}
+          // Mid-contest, leaving would silently burn the one attempt.
+          disabled={contestInProgress}
+          sx={{
+            position: 'fixed',
+            top: 12,
+            left: 12,
+            zIndex: 20,
+            maxWidth: { xs: 'calc(100vw - 300px)', sm: 260 },
+            minWidth: 0,
+            color: 'rgba(248,250,252,0.95)',
+            fontWeight: 600,
+            background: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(6px)',
+            border: '1px solid rgba(148, 163, 184, 0.3)',
+            '& .MuiChip-icon': { color: 'rgba(248,250,252,0.85)' },
+            '&:hover': { background: 'rgba(15, 23, 42, 0.85)' },
+            '&.Mui-disabled': { opacity: 0.6 },
+          }}
+        />
+      )}
+      <Menu
+        anchorEl={accountMenuAnchor}
+        open={accountMenuAnchor !== null}
+        onClose={() => setAccountMenuAnchor(null)}
+      >
+        {isGuest ? (
+          <MenuItem onClick={() => goHome('login')}>
+            <ListItemIcon>
+              <LoginIcon fontSize="small" />
+            </ListItemIcon>
+            Sign In
+          </MenuItem>
+        ) : (
+          <MenuItem onClick={handleLogout}>
+            <ListItemIcon>
+              <LogoutIcon fontSize="small" />
+            </ListItemIcon>
+            Log out
+          </MenuItem>
+        )}
+      </Menu>
       <Box
         component="footer"
         sx={{
@@ -362,9 +468,30 @@ function App() {
         </a>{' '} */}
         | Powered by Numbers 📊
       </Box>
-      <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
+      {/* Every screen sits on one dark glass panel. The screens use the dark MUI
+          theme (light text, light-blue accents), which vanishes against the bright
+          day sky; the panel keeps contrast the same in day and night mode. */}
+      <Box
+        sx={{
+          position: 'relative',
+          zIndex: 1,
+          width: 'calc(100% - 24px)',
+          maxWidth: 680,
+          mt: 9,
+          mb: 6,
+          display: 'flex',
+          justifyContent: 'center',
+          borderRadius: 4,
+          background: 'rgba(15, 23, 42, 0.78)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(148, 163, 184, 0.25)',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.35)',
+        }}
+      >
       <AnimatePresence mode="wait">
-        {screen === 'auth' && <AuthScreen key="auth" onAuthed={handleAuthed} />}
+        {screen === 'auth' && (
+          <AuthScreen key="auth" onAuthed={handleAuthed} onGuest={handleGuest} initialMode={authTab} />
+        )}
         {screen === 'playerName' && (
           <PlayerNameScreen key="player-name" onSubmit={handleNameSubmit} />
         )}
@@ -388,6 +515,8 @@ function App() {
           <QuizModeScreen
             key="quiz-mode"
             playerName={playerName}
+            isGuest={isGuest}
+            onSignIn={() => goHome('login')}
             onPlayForFun={handlePlayForFun}
             onContestStart={handleContestStart}
             onBack={() => setScreen('startChoice')}
@@ -416,7 +545,6 @@ function App() {
             playerName={playerName}
             customQuestions={customQuestions ?? undefined}
             couponCode={contestCoupon ?? undefined}
-            email={email}
             difficulty={quizDifficulty}
             onFinish={handleQuizFinish}
             onContestFinish={handleContestFinish}
@@ -435,6 +563,7 @@ function App() {
           <ContestResultScreen
             key="contest-result"
             grade={contestGrade}
+            playerName={playerName}
             onHome={() => {
               setContestGrade(null)
               setCustomQuestions(null)

@@ -96,3 +96,6 @@ export type MatchResult = {
 
 export const MIN_PLAYER_NAME_LENGTH = 2
 export const MAX_PLAYER_NAME_LENGTH = 20
+// Letters (incl. Unicode for international names), digits, and spaces only.
+// The backend enforces the same rule on signup (AuthController.NAME).
+export const ALLOWED_NAME_PATTERN = /^[\p{L}\p{N} ]*$/u

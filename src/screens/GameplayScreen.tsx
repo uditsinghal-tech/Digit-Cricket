@@ -65,6 +65,30 @@ const containerVariants = {
 // Per-ball think-time. If the local player doesn't pick a 1-6 within this
 // window, the timer auto-fires a PICK with value 0 (the "no-pick" sentinel
 // that the cricket rules degrade safely against — see BallNumber type docs).
+// --- Multiplayer safety switches (vs Friend matches) ---
+// Off for now so nobody can misuse the site to talk to strangers. Flip to `true`
+// to bring a feature back; no other change needed.
+//
+// Voice calls: off hides the call panel. Incoming calls are never auto-answered
+// (answering needs the panel's Accept button), so the mic is never touched.
+const VOICE_CALLS_ENABLED = false
+// Free-text chat: off replaces the text box with CHAT_PRESETS buttons, AND drops
+// any incoming message that isn't a preset, so a modified client can't push
+// arbitrary text to the other player either.
+const FREE_TEXT_CHAT_ENABLED = false
+const CHAT_PRESETS = [
+  "Let's have a match!",
+  'All the best!',
+  "I'm going to beat you in this game!",
+  'Nice shot! 🏏',
+  "That's a six! 🔥",
+  'Howzat! 😄',
+  'Close call!',
+  'Bring it on!',
+  'Well played! 👏',
+  'Good game, rematch?',
+]
+
 const BALL_TIMER_SECONDS = 10
 // When the remaining seconds drop to this value (or below) the clock UI
 // flips from the calm "green" palette to the urgent "red" palette so the
@@ -176,6 +200,7 @@ export default function GameplayScreen({
         // crafted payload that bypasses their local filter.
         const text = sanitizeChatMessage(msg.text, CHAT_MESSAGE_MAX_LENGTH)
         if (!text) return
+        if (!FREE_TEXT_CHAT_ENABLED && !CHAT_PRESETS.includes(text)) return
         setChatHistory((prev) => capChatHistory([...prev, { from: 'opp', text, ts: msg.ts }]))
         // Only bump the unread counter when the panel is closed —
         // an already-open panel scrolls to the new message instead.
@@ -197,10 +222,11 @@ export default function GameplayScreen({
   // Send the current chat draft to the opponent and append to local
   // history. Runs the full safety pipeline first (control-character
   // strip, bidi-trick strip, whitespace collapse, length cap, profanity
-  // mask). No-op when the cleaned draft is empty.
-  const handleSendChat = () => {
+  // mask). No-op when the cleaned draft is empty. `preset` sends a preset
+  // message directly instead of the typed draft.
+  const handleSendChat = (preset?: string) => {
     if (!isMultiplayer) return
-    const cleaned = sanitizeChatMessage(chatDraft, CHAT_MESSAGE_MAX_LENGTH)
+    const cleaned = sanitizeChatMessage(preset ?? chatDraft, CHAT_MESSAGE_MAX_LENGTH)
     if (!cleaned) {
       setChatDraft('')
       return
@@ -438,18 +464,20 @@ export default function GameplayScreen({
             gap: 1.5,
           }}
         >
-          <VoiceCallPanel
-            opponentName={opponentName}
-            voiceStatus={voiceStatus}
-            voiceSupported={voiceSupported}
-            voiceError={voiceError}
-            isMuted={isMuted}
-            onStart={() => void startCall()}
-            onAccept={() => void acceptCall()}
-            onReject={rejectCall}
-            onEnd={endCall}
-            onToggleMute={toggleMute}
-          />
+          {VOICE_CALLS_ENABLED && (
+            <VoiceCallPanel
+              opponentName={opponentName}
+              voiceStatus={voiceStatus}
+              voiceSupported={voiceSupported}
+              voiceError={voiceError}
+              isMuted={isMuted}
+              onStart={() => void startCall()}
+              onAccept={() => void acceptCall()}
+              onReject={rejectCall}
+              onEnd={endCall}
+              onToggleMute={toggleMute}
+            />
+          )}
 
           <ChatPanel
             opponentName={opponentName}
@@ -942,9 +970,7 @@ function BallTimer({ secondsLeft }: { secondsLeft: number }) {
     <motion.div
       animate={isCritical ? { scale: [1, 1.08, 1] } : { scale: 1 }}
       transition={
-        isCritical
-          ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' }
-          : { duration: 0.2 }
+        isCritical ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }
       }
       style={{ position: 'relative', width: size, height: size, display: 'inline-block' }}
       aria-label={`${secondsLeft} seconds left to pick`}
@@ -1042,7 +1068,7 @@ function ChatPanel({
   onDraftChange: (next: string) => void
   onOpen: () => void
   onClose: () => void
-  onSend: () => void
+  onSend: (preset?: string) => void
 }) {
   // Scroll the message list to the bottom whenever a new message lands
   // or the panel opens. Plain DOM API because the message list is a
@@ -1120,37 +1146,59 @@ function ChatPanel({
         <div ref={listEndRef} />
       </Box>
 
-      <Stack
-        direction="row"
-        spacing={0.75}
-        alignItems="center"
-        sx={{ px: 1, py: 0.75, borderTop: '1px solid rgba(148,163,184,0.18)' }}
-      >
-        <TextField
-          size="small"
-          fullWidth
-          variant="outlined"
-          placeholder="Type a message…"
-          value={draft}
-          onChange={(e) => onDraftChange(e.target.value.slice(0, CHAT_MESSAGE_MAX_LENGTH))}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              onSend()
-            }
+      {/* Preset-only chat while free text is switched off (see FREE_TEXT_CHAT_ENABLED). */}
+      {!FREE_TEXT_CHAT_ENABLED && (
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 0.5,
+            px: 1,
+            py: 0.75,
+            maxHeight: 120,
+            overflowY: 'auto',
+            borderTop: '1px solid rgba(148,163,184,0.18)',
           }}
-          slotProps={{ htmlInput: { maxLength: CHAT_MESSAGE_MAX_LENGTH } }}
-          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-        />
-        <IconButton
-          color="secondary"
-          onClick={onSend}
-          disabled={draft.trim().length === 0}
-          aria-label="Send message"
         >
-          <SendIcon fontSize="small" />
-        </IconButton>
-      </Stack>
+          {CHAT_PRESETS.map((p) => (
+            <Chip key={p} label={p} size="small" clickable onClick={() => onSend(p)} />
+          ))}
+        </Box>
+      )}
+
+      {FREE_TEXT_CHAT_ENABLED && (
+        <Stack
+          direction="row"
+          spacing={0.75}
+          alignItems="center"
+          sx={{ px: 1, py: 0.75, borderTop: '1px solid rgba(148,163,184,0.18)' }}
+        >
+          <TextField
+            size="small"
+            fullWidth
+            variant="outlined"
+            placeholder="Type a message…"
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value.slice(0, CHAT_MESSAGE_MAX_LENGTH))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                onSend()
+              }
+            }}
+            slotProps={{ htmlInput: { maxLength: CHAT_MESSAGE_MAX_LENGTH } }}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          />
+          <IconButton
+            color="secondary"
+            onClick={() => onSend()}
+            disabled={draft.trim().length === 0}
+            aria-label="Send message"
+          >
+            <SendIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+      )}
     </Box>
   )
 }
